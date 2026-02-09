@@ -121,48 +121,65 @@ app.get('/api/recommendations', async (req, res) => {
         const search = req.query.search || '';
         const models = await getRecentModels(task, search);
         const mem = await si.mem();
-        const gpu = await si.graphics();
+        const gpuData = await si.graphics();
+        const os = await si.osInfo();
 
         const systemSpecs = {
             ramGB: mem.total / (1024 ** 3),
-            vramGB: gpu.controllers.reduce((acc, curr) => acc + (curr.vram || 0), 0) / 1024,
-            hasGPU: gpu.controllers.length > 0 && gpu.controllers.some(g => (g.vram || 0) > 0)
+            vramGB: gpuData.controllers.reduce((acc, curr) => acc + (curr.vram || 0), 0) / 1024,
+            isEntryGPU: gpuData.controllers.some(g => g.model.toLowerCase().includes('intel') || g.model.toLowerCase().includes('graphics')),
+            vendor: gpuData.controllers[0]?.vendor || 'Unknown',
+            platform: os.platform
         };
 
         const recommendations = models.map(model => {
-            const sizeFP16 = model.params * 2;
-            const size8bit = model.params * 1.25;
-            const size4bit = model.params * 0.75;
+            // Memory Math (Expert Tier)
+            const weights4bit = model.params * 0.7; // Standard GGUF/AWQ 4-bit
+            const weights8bit = model.params * 1.1;
+            const weights16bit = model.params * 2.1;
+
+            // KV Cache / Context Window Buffer (assuming 4096 context)
+            const contextBuffer = 1.5; // ~1.5GB buffer for standard context
 
             let status = 'Not Feasible Locally';
             let reasoning = '';
             let strategy = '';
+            let fineTuning = 'Not Possible';
 
-            if (systemSpecs.vramGB >= sizeFP16) {
+            // 1. INFERENCE LOGIC (The "Suggested Stack")
+            if (systemSpecs.vramGB >= (weights16bit + contextBuffer)) {
                 status = 'Runnable Locally';
-                reasoning = `${systemSpecs.vramGB.toFixed(1)}GB VRAM fits this ${model.params}B model in high precision.`;
-                strategy = 'Use FP16/BF16 for maximum accuracy.';
-            } else if (systemSpecs.vramGB >= size8bit) {
+                reasoning = `${model.params}B fits comfortably in high precision on your GPU.`;
+                strategy = systemSpecs.vendor.includes('NVIDIA') ? 'vLLM / Hugging Face Transformers' : 'Ollama / MLX';
+            }
+            else if (systemSpecs.vramGB >= (weights4bit + contextBuffer)) {
                 status = 'Runnable Locally';
-                reasoning = `Sufficient VRAM for 8-bit quantization.`;
-                strategy = 'Use bitsandbytes INT8 or GPTQ.';
-            } else if (systemSpecs.vramGB >= size4bit) {
-                status = 'Runnable with Quantization (4-bit)';
-                reasoning = `Fits in VRAM using 4-bit quantization.`;
-                strategy = 'Use 4-bit AWQ or AutoGPTQ.';
-            } else if (systemSpecs.ramGB >= size4bit + 4) {
-                status = 'Runnable with Quantization (4-bit)';
-                reasoning = `Requires system RAM offloading (GGUF). Performance will be slow.`;
-                strategy = 'Use Llama.cpp (GGUF) with CPU offloading.';
-            } else {
+                reasoning = `Fits in VRAM at 4-bit. High speed inference possible.`;
+                strategy = systemSpecs.vendor.includes('NVIDIA') ? 'Ollama (AWQ) / LM Studio' : 'Ollama / Llama.cpp';
+            }
+            else if (systemSpecs.ramGB >= (weights4bit + contextBuffer + 4)) {
+                status = 'Runnable with Quantization';
+                reasoning = `Too big for your GPU, but fits in your ${systemSpecs.ramGB.toFixed(0)}GB RAM.`;
+                strategy = 'Llama.cpp (GGUF) / Ollama';
+                if (systemSpecs.isEntryGPU) reasoning += " (CPU Inference mode)";
+            }
+            else {
                 status = 'Not Feasible Locally';
-                reasoning = `Memory requirements exceeded (${size4bit.toFixed(1)}GB min vs ${systemSpecs.ramGB.toFixed(1)}GB total).`;
-                strategy = 'Recommend Cloud GPU (Lambda Labs/RunPod) or Google Colab.';
+                reasoning = `Weight size (${weights4bit.toFixed(1)}GB) exceeds total system memory.`;
+                strategy = 'Google Colab / RunPod / Lambda Labs';
             }
 
-            let fineTuning = 'Not Possible';
-            if (systemSpecs.vramGB >= size4bit + 6) fineTuning = 'Possible with QLoRA';
-            if (systemSpecs.vramGB >= sizeFP16 + 12) fineTuning = 'Possible with LoRA / Full';
+            // 2. FINE-TUNING LOGIC
+            // QLoRA needs: weights + gradients + optimizer states + activations
+            const qloraMinimumVRAM = weights4bit + (model.params * 0.5) + 2;
+            if (systemSpecs.vramGB >= qloraMinimumVRAM) {
+                fineTuning = 'Possible with QLoRA/Unsloth';
+                if (systemSpecs.vramGB >= weights16bit + 8) fineTuning = 'Full Fine-Tuning Possible';
+            } else if (systemSpecs.ramGB >= qloraMinimumVRAM + 4 && systemSpecs.platform === 'darwin') {
+                fineTuning = 'Possible via Apple Unified Memory';
+            } else {
+                fineTuning = 'Not Possible (Insufficient VRAM)';
+            }
 
             return {
                 ...model,
@@ -170,7 +187,7 @@ app.get('/api/recommendations', async (req, res) => {
                 reasoning,
                 strategy,
                 fineTuning,
-                requirements: { fp16: sizeFP16, int8: size8bit, int4: size4bit }
+                requirements: { fp16: weights16bit, int8: weights8bit, int4: weights4bit }
             };
         });
 

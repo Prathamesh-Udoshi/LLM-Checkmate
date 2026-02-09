@@ -1,66 +1,54 @@
-# LLM Checker - Hardware Compatibility Analyzer
+# LLM-Checkmate ♟️
 
-A full-stack web application that intelligently analyzes your local machine resources and determines which Large Language Models (LLMs) can be run locally.
+**LLM-Checkmate** is a high-performance local hardware analyzer and educational discovery engine for Large Language Models. It maps your machine's exact boundaries (CPU, RAM, VRAM) to the trending model registry on Hugging Face.
 
-## Features
+## 🚀 Features
 
-- **Hardware Analysis**: Deep scan of CPU (architecture, cores), RAM (total capacity), and GPU (model, VRAM, vendor).
-- **Intelligent Classification**: Models are classified as:
-  - **Runnable Locally**: Runs at full precision or high bits.
-  - **Runnable with Quantization**: Requires 4-bit or 8-bit quantization.
-  - **Not Feasible**: Memory requirements exceed local hardware.
-- **Actionable Recommendations**: Insight into quantization strategies (GGUF, AWQ, GPTQ) and fine-tuning feasibility (LoRA, QLoRA).
-- **Dynamic Model Database**: Fetches trending models directly from the Hugging Face Hub API.
-- **Premium UI**: Modern dashboard with glassmorphism, dark mode, and real-time analysis.
+- **Hardware Extraction**: Real-time analysis of your OS, CPU architecture, and GPU VRAM.
+- **Expert Recommendation Engine**: Custom inference strategies (GGUF, AWQ, vLLM) based on your hardware vendor (NVIDIA, Apple Silicon, or Integrated).
+- **Educational Glossary**: Deep-dives into Quantization, LoRA, KV Caching, and Unified Memory.
+- **Registry Discovery**: Fetch top-100 models per category directly from the Hugging Face Hub.
+- **Local Deployment Guard**: Mathematical validation for inference and fine-tuning (QLoRA) feasibility.
 
-## Tech Stack
+## 🛠️ Tech Stack
 
-- **Frontend**: React, Vite, Lucide Icons, Vanilla CSS (Premium design).
-- **Backend**: Node.js, Express, `systeminformation`.
-- **API**: Hugging Face Hub API integration.
+- **Frontend**: React.js, Vite, Lucide Icons
+- **Backend**: Node.js, Express, `systeminformation`
+- **Data Source**: Hugging Face Hub API
 
-## Getting Started
+## 🏁 Getting Started
 
-### Prerequisites
-
+### 1. Prerequisites
 - Node.js (v18+)
-- Local machine with CPU/GPU information available.
+- Git
 
-### Installation
+### 2. Installation
+```bash
+# Clone the repository
+git clone https://github.com/yourusername/LLM-Checkmate.git
+cd LLM-Checkmate
 
-1. **Clone and Setup Server**:
-   ```bash
-   cd server
-   npm install
-   ```
+# Install dependencies for both parts
+cd server && npm install
+cd ../client && npm install
+```
 
-2. **Setup Client**:
-   ```bash
-   cd client
-   npm install
-   ```
+### 3. Running the App
+```bash
+# In one terminal start the backend
+cd server
+npm run dev
 
-### Running the App
+# In another terminal start the frontend
+cd client
+npm run dev
+```
 
-1. **Start Backend**:
-   ```bash
-   cd server
-   npm run dev
-   ```
+## 🧠 Expert Logic
+The application uses a heuristic-based engine to calculate:
+- **Weights**: Parameter count × Precision bits.
+- **KV Cache**: Buffer specifically designated for context length.
+- **Training Overhead**: Estimated gradients + optimizer states for fine-tuning checks.
 
-2. **Start Frontend**:
-   ```bash
-   cd client
-   npm run dev
-   ```
-
-3. Open your browser at `http://localhost:5173`.
-
-## Architecture
-
-The system uses `systeminformation` on the backend to probe hardware specs. This data is then matched against model metadata (parameter count) to calculate memory requirements.
-- **FP16**: 2 bytes per parameter.
-- **8-bit**: ~1.25 bytes per parameter.
-- **4-bit**: ~0.75-0.8 bytes per parameter.
-
-The app also considers system overhead (OS etc.) to provide realistic "Not Feasible" warnings.
+---
+Built with Precision for the AI Community.
