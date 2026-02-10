@@ -25,9 +25,13 @@ body {
     padding: 0;
 }
 
+
 .container {
     padding: 2rem 4rem;
-    max-width: 100%;
+    max-width: 1600px;
+    margin: 0 auto;
+    width: 100%;
+    box-sizing: border-box;
 }
 
 header {
@@ -125,9 +129,13 @@ h1 {
 /* Dashboard Split */
 .dashboard {
     display: grid;
-    grid-template-columns: 350px 1fr;
-    gap: 6rem;
+    grid-template-columns: 320px 1fr;
+    gap: 5rem;
     align-items: start;
+    width: 100%;
+    min-width: 0;
+    justify-items: stretch;
+    /* Ensure children stretch to fill grid cells */
 }
 
 /* Specs - Vertical list */
@@ -158,24 +166,35 @@ h1 {
 }
 
 /* Model List - Clean Table-like view */
+.models-section {
+    width: 100%;
+    min-width: 0;
+    grid-column: 2;
+    /* Force column position */
+}
+
 .model-header {
     display: grid;
-    grid-template-columns: 2fr 1fr 1fr 1fr;
+    grid-template-columns: 2fr 1fr 1fr 100px;
+    gap: 1.5rem;
     padding: 1rem 0;
     border-bottom: 1px solid white;
     font-size: 0.75rem;
     text-transform: uppercase;
     letter-spacing: 0.1em;
     color: white;
+    width: 100%;
 }
 
 .model-row {
     display: grid;
-    grid-template-columns: 2fr 1fr 1fr 1fr;
+    grid-template-columns: 2fr 1fr 1fr 100px;
+    gap: 1.5rem;
     padding: 2.5rem 0;
     border-bottom: 1px solid var(--border);
     align-items: center;
     transition: background 0.2s;
+    width: 100%;
 }
 
 .model-name {
@@ -195,17 +214,58 @@ h1 {
     font-weight: 500;
 }
 
+/* Status Tiers */
 .status-runnable {
-    color: var(--success);
+    color: #4ade80;
+    /* Green - Native/Optimized */
+    font-weight: 600;
 }
 
 .status-quant {
-    color: var(--warning);
+    color: #facc15;
+    /* Yellow - Hybrid */
+    font-weight: 500;
+}
+
+.status-warning {
+    color: #fb923c;
+    /* Orange - Experimental/Bottleneck */
+    font-weight: 500;
 }
 
 .status-impossible {
-    color: #ff4444;
+    color: #ef4444;
+    /* Red - Cloud Only */
     font-weight: 600;
+}
+
+/* Legend */
+.legend-container {
+    display: flex;
+    gap: 2rem;
+    margin-bottom: 3rem;
+    padding-bottom: 2rem;
+    border-bottom: 1px solid var(--border);
+    flex-wrap: wrap;
+}
+
+.legend-item {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.8rem;
+    color: #94a3b8;
+}
+
+.legend-item b {
+    color: white;
+    font-weight: 600;
+}
+
+.dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
 }
 
 .strategy-box {

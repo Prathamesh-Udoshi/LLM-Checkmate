@@ -75,11 +75,6 @@ function App() {
         ? models
         : models.filter(m => m.company === selectedProvider);
 
-    const getStatusClass = (status) => {
-        if (status.includes('Not Feasible')) return 'status-impossible';
-        if (status.includes('Runnable Locally')) return 'status-runnable';
-        return 'status-quant';
-    };
 
     if (view === 'landing') {
         return (
@@ -216,7 +211,13 @@ function App() {
 
                 <div className="filter-group">
                     <label>Inference Category</label>
-                    <select value={selectedTask} onChange={(e) => setSelectedTask(e.target.value)}>
+                    <select
+                        value={selectedTask}
+                        onChange={(e) => {
+                            setSelectedTask(e.target.value);
+                            setSelectedProvider('All');
+                        }}
+                    >
                         {tasks.map(t => <option key={t.id} value={t.id}>{t.label}</option>)}
                     </select>
                 </div>
@@ -261,6 +262,26 @@ function App() {
                     ))}
                 </div>
 
+                {/* Compatibility Legend */}
+                <div className="legend-container">
+                    <div className="legend-item">
+                        <span className="dot" style={{ background: '#4ade80' }}></span>
+                        <span><b>Native / Optimized</b>: 100% GPU Speed</span>
+                    </div>
+                    <div className="legend-item">
+                        <span className="dot" style={{ background: '#facc15' }}></span>
+                        <span><b>Hybrid</b>: Runs on CPU & GPU (Slower)</span>
+                    </div>
+                    <div className="legend-item">
+                        <span className="dot" style={{ background: '#fb923c' }}></span>
+                        <span><b>Experimental</b>: Extreme quantization required</span>
+                    </div>
+                    <div className="legend-item">
+                        <span className="dot" style={{ background: '#ef4444' }}></span>
+                        <span><b>Cloud Only</b>: Exceeds total RAM</span>
+                    </div>
+                </div>
+
                 {/* Model Results Main */}
                 <div className="models-section">
                     <div className="model-header">
@@ -271,37 +292,43 @@ function App() {
                     </div>
 
                     <div className="model-list">
-                        {filteredModels.map((model) => (
-                            <div className="model-row" key={model.id}>
-                                <div className="model-identity">
-                                    <div className="model-name">{model.name}</div>
-                                    <div className="model-meta">
-                                        {model.params}B Parameters • {model.downloads.toLocaleString()} downloads
+                        {filteredModels.length > 0 ? (
+                            filteredModels.map((model) => (
+                                <div className="model-row" key={model.id}>
+                                    <div className="model-identity">
+                                        <div className="model-name">{model.name}</div>
+                                        <div className="model-meta">
+                                            {model.params}B Parameters • {model.downloads.toLocaleString()} downloads
+                                        </div>
+                                    </div>
+
+                                    <div className={`status-badge ${model.badgeClass}`}>
+                                        {model.status}
+                                    </div>
+
+                                    <div className="strategy-box">
+                                        {model.strategy}
+                                        <div style={{ fontSize: '0.7rem', color: '#475569', marginTop: '0.4rem' }}>
+                                            Fine Tuning: {model.fineTuning}
+                                        </div>
+                                    </div>
+
+                                    <div className="links">
+                                        <a href={`https://huggingface.co/${model.id}`} target="_blank" rel="noreferrer">
+                                            HF Profile ↗
+                                        </a>
                                     </div>
                                 </div>
-
-                                <div className={`status-badge ${getStatusClass(model.status)}`}>
-                                    {model.status}
-                                </div>
-
-                                <div className="strategy-box">
-                                    {model.strategy}
-                                    <div style={{ fontSize: '0.7rem', color: '#475569', marginTop: '0.4rem' }}>
-                                        Fine Tuning: {model.fineTuning}
-                                    </div>
-                                </div>
-
-                                <div className="links">
-                                    <a href={`https://huggingface.co/${model.id}`} target="_blank" rel="noreferrer">
-                                        HF Profile ↗
-                                    </a>
-                                </div>
+                            ))
+                        ) : (
+                            <div style={{ padding: '4rem 0', textAlign: 'center', color: '#64748b' }}>
+                                No models found for this category or provider. Try adjusting your filters.
                             </div>
-                        ))}
+                        )}
                     </div>
                 </div>
             </div>
-        </div>
+        </div >
     );
 }
 
