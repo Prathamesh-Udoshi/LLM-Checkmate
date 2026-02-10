@@ -3,14 +3,22 @@ import cors from 'cors';
 import si from 'systeminformation';
 import fetch from 'node-fetch';
 import dotenv from 'dotenv';
+import path from 'path';
+import { fileURLToPath } from 'url';
 
 dotenv.config();
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const app = express();
 const PORT = process.env.PORT || 3001;
 
 app.use(cors());
 app.use(express.json());
+
+// Serve static files from the React app
+app.use(express.static(path.join(__dirname, '../client/dist')));
 
 // Fallback database of popular LLMs
 const FALLBACK_MODELS = [
@@ -267,6 +275,11 @@ app.get('/api/recommendations', async (req, res) => {
         console.error(error);
         res.status(500).json({ error: error.message });
     }
+});
+
+// Production: Serve React frontend
+app.get('*', (req, res) => {
+    res.sendFile(path.join(__dirname, '../client/dist/index.html'));
 });
 
 app.listen(PORT, () => {

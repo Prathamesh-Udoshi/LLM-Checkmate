@@ -1,0 +1,20 @@
+{
+    "name": "llm-checkmate-root",
+    "version": "1.0.0",
+    "description": "Root package.json for Render deployment",
+    "type": "module",
+    "scripts": {
+        "start": "node server/index.js",
+        "build": "npm install --prefix client && npm run build --prefix client"
+    },
+    "engines": {
+        "node": ">=18.0.0"
+    },
+    "dependencies": {
+        "express": "^4.19.2",
+        "cors": "^2.8.5",
+        "systeminformation": "^5.23.1",
+        "node-fetch": "^3.3.2",
+        "dotenv": "^16.4.5"
+    }
+}
