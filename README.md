@@ -5,7 +5,9 @@
 ## 🚀 Features
 
 - **Hardware Extraction**: Real-time analysis of your OS, CPU architecture, and GPU VRAM.
-- **Expert Recommendation Engine**: Custom inference strategies (GGUF, AWQ, vLLM) based on your hardware vendor (NVIDIA, Apple Silicon, or Integrated).
+- **Expert Recommendation Engine**: Custom inference strategies (GGUF, AWQ, vLLM) based on your hardware vendor.
+- **5-Tier Confidence System**: Precise compatibility scoring (Native, Optimized, Hybrid, Experimental, Cloud Only).
+- **Network Resilience**: Automatic retries and smart DNS fallback for reliable Hugging Face API access.
 - **Educational Glossary**: Deep-dives into Quantization, LoRA, KV Caching, and Unified Memory.
 - **Registry Discovery**: Fetch top-100 models per category directly from the Hugging Face Hub.
 - **Local Deployment Guard**: Mathematical validation for inference and fine-tuning (QLoRA) feasibility.
