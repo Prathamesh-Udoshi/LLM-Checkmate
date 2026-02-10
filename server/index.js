@@ -25,8 +25,39 @@ const POPULAR_TASKS = [
     { id: 'text-generation', label: 'Text Generation' },
     { id: 'summarization', label: 'Summarization' },
     { id: 'conversational', label: 'Conversational' },
-    { id: 'text2text-generation', label: 'Text-to-Text' }
+    { id: 'text2text-generation', label: 'Text-to-Text' },
+    { id: 'translation', label: 'Translation' },
+    { id: 'question-answering', label: 'Question Answering' },
+    { id: 'feature-extraction', label: 'Embeddings (Feature Extraction)' },
+    { id: 'sentence-similarity', label: 'Sentence Similarity' },
+    { id: 'image-to-text', label: 'Vision-Language (Image-to-Text)' }
 ];
+
+// Robust fetch with retry logic
+const fetchWithRetry = async (url, options = {}, retries = 3) => {
+    try {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 8000); // 8s timeout
+
+        const response = await fetch(url, {
+            ...options,
+            signal: controller.signal,
+            // Header to pretend we are a browser to avoid some bot blocks
+            headers: { 'User-Agent': 'LLM-Checkmate/1.0' }
+        });
+
+        clearTimeout(timeout);
+        if (!response.ok) throw new Error(`HTTP Error: ${response.status}`);
+        return response;
+    } catch (error) {
+        if (retries > 0) {
+            console.warn(`Fetch failed, retrying... (${retries} left). Reason: ${error.message}`);
+            await new Promise(res => setTimeout(res, 1000));
+            return fetchWithRetry(url, options, retries - 1);
+        }
+        throw error;
+    }
+};
 
 async function getRecentModels(task = 'text-generation', search = '') {
     try {
@@ -34,8 +65,16 @@ async function getRecentModels(task = 'text-generation', search = '') {
         if (search) {
             url += `&search=${encodeURIComponent(search)}`;
         }
-        const response = await fetch(url);
+
+        const response = await fetchWithRetry(url);
         const models = await response.json();
+
+        if (!Array.isArray(models)) {
+            console.warn(`HF API did not return an array for task: ${task}. Response:`, models);
+            return [];
+        }
+
+        console.log(`Fetched ${models.length} models for task: ${task}`);
 
         return models.map(m => {
             // Improved parameter estimation for encoder-decoder models
@@ -63,10 +102,10 @@ async function getRecentModels(task = 'text-generation', search = '') {
                 id: m.id,
                 name: m.id.split('/').pop(),
                 params: params,
-                company: provider,
-                downloads: m.downloads,
+                company: provider === m.id ? 'Community' : provider, // Fix for models without providers
+                downloads: m.downloads || 0, // Fallback if missing
                 task: task,
-                author: m.id.split('/')[0]
+                author: provider
             };
         });
     } catch (e) {
@@ -135,58 +174,90 @@ app.get('/api/recommendations', async (req, res) => {
         const recommendations = models.map(model => {
             // Memory Math (Expert Tier)
             const weights4bit = model.params * 0.7; // Standard GGUF/AWQ 4-bit
-            const weights8bit = model.params * 1.1;
-            const weights16bit = model.params * 2.1;
+            const weights8bit = model.params * 1.3;
+            const weights16bit = model.params * 2.2;
 
             // KV Cache / Context Window Buffer (assuming 4096 context)
-            const contextBuffer = 1.5; // ~1.5GB buffer for standard context
+            const contextBuffer = 1.5;
 
-            let status = 'Not Feasible Locally';
+            let status = 'Cloud Only';
+            let badgeClass = 'status-impossible';
             let reasoning = '';
             let strategy = '';
             let fineTuning = 'Not Possible';
+            let gpuOffload = 0;
 
-            // 1. INFERENCE LOGIC (The "Suggested Stack")
-            if (systemSpecs.vramGB >= (weights16bit + contextBuffer)) {
-                status = 'Runnable Locally';
-                reasoning = `${model.params}B fits comfortably in high precision on your GPU.`;
-                strategy = systemSpecs.vendor.includes('NVIDIA') ? 'vLLM / Hugging Face Transformers' : 'Ollama / MLX';
+            // 1. INFERENCE LOGIC (5-Tier System)
+
+            // TIER 1: NATIVE PERFORMANCE (FP16/8-bit in VRAM)
+            if (systemSpecs.vramGB >= (weights8bit + contextBuffer)) {
+                status = 'Native Performance';
+                badgeClass = 'status-runnable';
+                reasoning = `Perfect Fit. 100% GPU execution at high precision (8-bit/FP16). Expect maximum speed.`;
+                strategy = systemSpecs.vendor.includes('NVIDIA') ? 'vLLM / Hugging Face' : 'Ollama (FP16)';
+                gpuOffload = 100;
             }
+            // TIER 2: OPTIMIZED (4-bit in VRAM)
             else if (systemSpecs.vramGB >= (weights4bit + contextBuffer)) {
-                status = 'Runnable Locally';
-                reasoning = `Fits in VRAM at 4-bit. High speed inference possible.`;
-                strategy = systemSpecs.vendor.includes('NVIDIA') ? 'Ollama (AWQ) / LM Studio' : 'Ollama / Llama.cpp';
+                status = 'Optimized Local';
+                badgeClass = 'status-runnable'; // Reusing green for good fit
+                reasoning = `Excellent Fit. 100% GPU execution using 4-bit quantization. Very fast.`;
+                strategy = systemSpecs.vendor.includes('NVIDIA') ? 'AutoGPTQ / EXL2' : 'Ollama / MLX (4-bit)';
+                gpuOffload = 100;
             }
-            else if (systemSpecs.ramGB >= (weights4bit + contextBuffer + 4)) {
-                status = 'Runnable with Quantization';
-                reasoning = `Too big for your GPU, but fits in your ${systemSpecs.ramGB.toFixed(0)}GB RAM.`;
-                strategy = 'Llama.cpp (GGUF) / Ollama';
-                if (systemSpecs.isEntryGPU) reasoning += " (CPU Inference mode)";
+            // TIER 3: HYBRID (Split CPU/GPU)
+            else if ((systemSpecs.vramGB + systemSpecs.ramGB) >= (weights4bit + contextBuffer + 4)) {
+                // Calculate offload percentage
+                const capableVRAM = Math.max(0, systemSpecs.vramGB - contextBuffer);
+                const percentGPU = Math.min(100, Math.round((capableVRAM / weights4bit) * 100));
+
+                status = 'Hybrid Offload';
+                badgeClass = 'status-quant';
+                reasoning = `Partial GPU Fit. ~${percentGPU}% of model runs on GPU, ${100 - percentGPU}% on slower CPU RAM.`;
+                strategy = 'Llama.cpp (GGUF)';
+                if (percentGPU < 20) {
+                    status = 'CPU Bottleneck';
+                    badgeClass = 'status-warning';
+                    reasoning = 'Mostly CPU execution. Generation will be slow (1-3 tokens/s).';
+                }
+                gpuOffload = percentGPU;
             }
+            // TIER 4: EXPERIMENTAL (3-bit or Tight Fit)
+            else if ((systemSpecs.ramGB + systemSpecs.vramGB) >= (model.params * 0.5 + 2)) {
+                status = 'Experimental';
+                badgeClass = 'status-warning';
+                reasoning = 'Requires extreme quantization (2-bit/3-bit) to fit. Intelligence loss likely.';
+                strategy = 'Llama.cpp (IQ3_XS / Q2_K)';
+                gpuOffload = 0; // Assuming minimal to no GPU offload for experimental CPU-heavy
+            }
+            // TIER 5: CLOUD ONLY
             else {
-                status = 'Not Feasible Locally';
-                reasoning = `Weight size (${weights4bit.toFixed(1)}GB) exceeds total system memory.`;
-                strategy = 'Google Colab / RunPod / Lambda Labs';
+                status = 'Cloud Only';
+                badgeClass = 'status-impossible';
+                reasoning = `Requires ${(weights4bit).toFixed(1)}GB+ RAM. System has ${(systemSpecs.ramGB + systemSpecs.vramGB).toFixed(1)}GB usable.`;
+                strategy = 'RunPod / Lambda Labs';
+                gpuOffload = 0;
             }
 
             // 2. FINE-TUNING LOGIC
-            // QLoRA needs: weights + gradients + optimizer states + activations
-            const qloraMinimumVRAM = weights4bit + (model.params * 0.5) + 2;
+            const qloraMinimumVRAM = weights4bit + (model.params * 0.6) + 2;
             if (systemSpecs.vramGB >= qloraMinimumVRAM) {
-                fineTuning = 'Possible with QLoRA/Unsloth';
-                if (systemSpecs.vramGB >= weights16bit + 8) fineTuning = 'Full Fine-Tuning Possible';
+                fineTuning = 'Possible (QLoRA)';
+                if (systemSpecs.vramGB >= weights16bit + 8) fineTuning = 'Full Fine-Tuning';
             } else if (systemSpecs.ramGB >= qloraMinimumVRAM + 4 && systemSpecs.platform === 'darwin') {
-                fineTuning = 'Possible via Apple Unified Memory';
+                fineTuning = 'Apple MLX (Unified)';
             } else {
-                fineTuning = 'Not Possible (Insufficient VRAM)';
+                fineTuning = 'Not Feasible';
             }
 
             return {
                 ...model,
                 status,
+                badgeClass, // Sending class directly to frontend
                 reasoning,
                 strategy,
                 fineTuning,
+                gpuOffload,
                 requirements: { fp16: weights16bit, int8: weights8bit, int4: weights4bit }
             };
         });
