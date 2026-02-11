@@ -5,6 +5,7 @@ import fetch from 'node-fetch';
 import dotenv from 'dotenv';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import fs from 'fs';
 
 dotenv.config();
 
@@ -17,8 +18,9 @@ const PORT = process.env.PORT || 3001;
 app.use(cors());
 app.use(express.json());
 
-// Serve static files from the React app
-app.use(express.static(path.join(__dirname, '../client/dist')));
+// Serve static files from the React app (Production Only)
+const clientDistPath = path.join(__dirname, '../client/dist');
+app.use(express.static(clientDistPath));
 
 // Fallback database of popular LLMs
 const FALLBACK_MODELS = [
@@ -122,12 +124,79 @@ async function getRecentModels(task = 'text-generation', search = '') {
     }
 }
 
+// In-memory store for agent-registered devices
+// Structure: { "device-uuid": { cpu: ..., ram: ..., gpu: ..., timestamp: ... } }
+const registeredDevices = {};
+
 app.get('/api/tasks', (req, res) => {
     res.json(POPULAR_TASKS);
 });
 
+// Endpoint to receive data from local Python agent
+app.post('/api/device/register', (req, res) => {
+    try {
+        const { device_id, metrics, timestamp } = req.body;
+
+        if (!device_id || !metrics) {
+            return res.status(400).json({ error: "Missing device_id or metrics" });
+        }
+
+        // Store or update device metrics
+        registeredDevices[device_id] = {
+            ...metrics,
+            lastSeen: new Date(),
+            source: 'agent'
+        };
+
+        console.log(`🔌 Agent connected: ${device_id} (${metrics.os.system})`);
+        res.json({ success: true, message: "Device registered successfully" });
+    } catch (e) {
+        console.error("Device register error:", e);
+        res.status(500).json({ error: e.message });
+    }
+});
+
 app.get('/api/system-info', async (req, res) => {
     try {
+        const { deviceId } = req.query;
+
+        // 1. If Device ID provided, try to fetch from agent registry
+        if (deviceId) {
+            const agentData = registeredDevices[deviceId];
+            if (agentData) {
+                // Map agent format to frontend format
+                const info = {
+                    cpu: {
+                        brand: agentData.cpu.brand,
+                        cores: agentData.cpu.logical_cores,
+                        physicalCores: agentData.cpu.physical_cores,
+                        architecture: agentData.cpu.architecture || 'unknown'
+                    },
+                    ram: {
+                        total: agentData.ram.total_gb * (1024 ** 3), // Convert GB back to bytes for consistency if needed, or update frontend to handle GB. 
+                        // Frontend expects baseGB, so let's just send baseGB directly
+                        baseGB: agentData.ram.total_gb
+                    },
+                    os: {
+                        platform: agentData.os.system,
+                        distro: agentData.os.release || 'Agent OS',
+                        release: agentData.os.version
+                    },
+                    // Handle Multiple GPUs
+                    gpu: agentData.gpu.map(g => ({
+                        model: g.name,
+                        vram: (g.vram_total_gb || 0) * 1024, // Convert to MB if needed, or adjust below
+                        vramGB: g.vram_total_gb || 0,
+                        vendor: 'Unknown' // Agent might not send vendor string explicitly, infer?
+                    }))
+                };
+                return res.json(info);
+            } else {
+                return res.status(404).json({ error: "Device not found" });
+            }
+        }
+
+        // 2. Default: Fallback to Server's Own Specs (Local Mode)
         const cpu = await si.cpu();
         const mem = await si.mem();
         const os = await si.osInfo();
@@ -166,18 +235,41 @@ app.get('/api/recommendations', async (req, res) => {
     try {
         const task = req.query.task || 'text-generation';
         const search = req.query.search || '';
-        const models = await getRecentModels(task, search);
-        const mem = await si.mem();
-        const gpuData = await si.graphics();
-        const os = await si.osInfo();
+        const deviceId = req.query.deviceId;
 
-        const systemSpecs = {
-            ramGB: mem.total / (1024 ** 3),
-            vramGB: gpuData.controllers.reduce((acc, curr) => acc + (curr.vram || 0), 0) / 1024,
-            isEntryGPU: gpuData.controllers.some(g => g.model.toLowerCase().includes('intel') || g.model.toLowerCase().includes('graphics')),
-            vendor: gpuData.controllers[0]?.vendor || 'Unknown',
-            platform: os.platform
-        };
+        let systemSpecs;
+
+        // 1. Try to load specs from Agent (if Device ID provided)
+        if (deviceId && registeredDevices[deviceId]) {
+            const d = registeredDevices[deviceId];
+            systemSpecs = {
+                ramGB: d.ram.total_gb,
+                // Sum up VRAM from all GPUs? Or just the best one? usually sum for unified, or max for discrete. 
+                // Let's sum for now as a naive approach, or maybe just take the max if they are not confirming SLI/NVLink.
+                // Actually, for LLMs, splitting across GPUs is common (pipeline parallelism). Let's sum.
+                vramGB: d.gpu.reduce((acc, curr) => acc + (curr.vram_total_gb || 0), 0),
+                isEntryGPU: false, // Agent doesn't explicitly flag this yet, assume false or check names
+                vendor: d.gpu[0]?.name.split(' ')[0] || 'Unknown',
+                platform: d.os.system
+            };
+            console.log(`🧠 Generating recommendations for Remote Device: ${deviceId}`);
+        }
+        // 2. Fallback to Local Server Specs
+        else {
+            const mem = await si.mem();
+            const gpuData = await si.graphics();
+            const os = await si.osInfo();
+
+            systemSpecs = {
+                ramGB: mem.total / (1024 ** 3),
+                vramGB: gpuData.controllers.reduce((acc, curr) => acc + (curr.vram || 0), 0) / 1024,
+                isEntryGPU: gpuData.controllers.some(g => g.model.toLowerCase().includes('intel') || g.model.toLowerCase().includes('graphics')),
+                vendor: gpuData.controllers[0]?.vendor || 'Unknown',
+                platform: os.platform
+            };
+        }
+
+        const models = await getRecentModels(task, search);
 
         const recommendations = models.map(model => {
             // Memory Math (Expert Tier)
@@ -279,7 +371,12 @@ app.get('/api/recommendations', async (req, res) => {
 
 // Production: Serve React frontend
 app.get('*', (req, res) => {
-    res.sendFile(path.join(__dirname, '../client/dist/index.html'));
+    const indexPath = path.join(__dirname, '../client/dist/index.html');
+    if (fs.existsSync(indexPath)) {
+        res.sendFile(indexPath);
+    } else {
+        res.status(404).send("Frontend build not found. If developing, use the Vite dev server (port 5173).");
+    }
 });
 
 app.listen(PORT, () => {
