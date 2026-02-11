@@ -14,7 +14,6 @@ import {
 
 function App() {
     const [view, setView] = useState('landing'); // 'landing' or 'dashboard'
-    const [system, setSystem] = useState(null);
     const [models, setModels] = useState([]);
     const [tasks, setTasks] = useState([]);
     const [selectedTask, setSelectedTask] = useState('text-generation');
@@ -25,12 +24,32 @@ function App() {
 
     const [manualRam, setManualRam] = useState(8);
     const [manualVram, setManualVram] = useState(2);
-    const [useManual, setUseManual] = useState(false);
+    const [rawSpecs, setRawSpecs] = useState('');
 
     useEffect(() => {
         fetchTasks();
-        fetchSystemInfo();
     }, []);
+
+    // Smart Parser for Pasted Specs
+    useEffect(() => {
+        if (!rawSpecs) return;
+
+        // Match RAM (e.g., "Installed RAM 16.0 GB", "Memory: 32 GB", "8GB RAM")
+        const ramMatch = rawSpecs.match(/(?:Installed RAM|Memory|RAM)[:\s]*(\d+(?:\.\d+)?)\s*GB/i);
+        if (ramMatch && ramMatch[1]) {
+            setManualRam(Math.round(parseFloat(ramMatch[1])));
+        }
+
+        // Match VRAM if user pastes GPU info (e.g., "Dedicated Video Memory: 4096 MB" or "8 GB VRAM")
+        const vramGBMatch = rawSpecs.match(/(\d+(?:\.\d+)?)\s*GB\s*VRAM/i);
+        const vramMBMatch = rawSpecs.match(/(?:Dedicated Video Memory|VRAM)[:\s]*(\d+)\s*MB/i);
+
+        if (vramGBMatch && vramGBMatch[1]) {
+            setManualVram(Math.round(parseFloat(vramGBMatch[1])));
+        } else if (vramMBMatch && vramMBMatch[1]) {
+            setManualVram(Math.round(parseInt(vramMBMatch[1]) / 1024));
+        }
+    }, [rawSpecs]);
 
     useEffect(() => {
         if (view === 'dashboard') {
@@ -39,7 +58,7 @@ function App() {
             }, 500);
             return () => clearTimeout(delayDebounceFn);
         }
-    }, [selectedTask, searchQuery, view, manualRam, manualVram, useManual]);
+    }, [selectedTask, searchQuery, view, manualRam, manualVram]);
 
     const fetchTasks = async () => {
         try {
@@ -51,30 +70,10 @@ function App() {
         }
     };
 
-    const fetchSystemInfo = async () => {
-        try {
-            const res = await fetch('/api/system-info');
-            if (!res.ok) throw new Error("System info fetch failed");
-            const data = await res.json();
-            setSystem(data);
-
-            // Set initial manual values based on server/local detected specs
-            if (!useManual) {
-                setManualRam(data.ram.baseGB);
-                setManualVram(data.gpu[0]?.vramGB || 0);
-            }
-        } catch (err) {
-            setError("Could not auto-detect hardware. Please use manual entry.");
-        }
-    };
-
     const fetchRecommendations = async () => {
         setLoading(true);
         try {
-            let url = `/api/recommendations?task=${selectedTask}&search=${encodeURIComponent(searchQuery)}`;
-            if (useManual) {
-                url += `&manualRam=${manualRam}&manualVram=${manualVram}`;
-            }
+            let url = `/api/recommendations?task=${selectedTask}&search=${encodeURIComponent(searchQuery)}&manualRam=${manualRam}&manualVram=${manualVram}`;
 
             const res = await fetch(url);
             const data = await res.json();
@@ -227,41 +226,45 @@ function App() {
 
             <header>
                 <h1>Hardware Compatibility Analyzer</h1>
-                <div className="subtitle">Real-time resource mapping for {system?.cpu?.brand}.</div>
+                <div className="subtitle">Real-time resource mapping based on your custom specifications.</div>
             </header>
 
             {/* Manual Specification Section */}
             <div className="manual-specs-bar">
                 <div className="manual-header">
-                    <h3>Configure Hardware Baseline</h3>
-                    <label className="switch-container">
-                        <input
-                            type="checkbox"
-                            checked={useManual}
-                            onChange={(e) => setUseManual(e.target.checked)}
-                        />
-                        <span className="switch-label">Enable Manual Override</span>
-                    </label>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem' }}>
+                        <h3>Configure Your Hardware</h3>
+                        <p style={{ fontSize: '0.75rem', color: '#64748b' }}>Copy from Settings &gt; System &gt; About and paste below, or enter manually.</p>
+                    </div>
                 </div>
 
-                <div className={`manual-controls ${useManual ? 'active' : 'disabled'}`}>
-                    <div className="manual-group">
-                        <label>System RAM (GB): <span>{manualRam} GB</span></label>
-                        <input
-                            type="range" min="2" max="256" step="2"
-                            value={manualRam}
-                            onChange={(e) => setManualRam(parseInt(e.target.value))}
-                            disabled={!useManual}
-                        />
-                    </div>
-                    <div className="manual-group">
-                        <label>GPU VRAM (GB): <span>{manualVram} GB</span></label>
-                        <input
-                            type="range" min="0" max="80" step="1"
-                            value={manualVram}
-                            onChange={(e) => setManualVram(parseInt(e.target.value))}
-                            disabled={!useManual}
-                        />
+                <div className="manual-content">
+                    <textarea
+                        className="specs-paste-area"
+                        placeholder="Paste specs here (e.g. Device name DESKTOP-S6S... Installed RAM 8.00 GB ...)"
+                        value={rawSpecs}
+                        onChange={(e) => {
+                            setRawSpecs(e.target.value);
+                        }}
+                    />
+
+                    <div className="manual-inputs">
+                        <div className="input-field">
+                            <label>System RAM (GB)</label>
+                            <input
+                                type="number"
+                                value={manualRam}
+                                onChange={(e) => setManualRam(parseInt(e.target.value) || 0)}
+                            />
+                        </div>
+                        <div className="input-field">
+                            <label>GPU VRAM (GB)</label>
+                            <input
+                                type="number"
+                                value={manualVram}
+                                onChange={(e) => setManualVram(parseInt(e.target.value) || 0)}
+                            />
+                        </div>
                     </div>
                 </div>
             </div>
@@ -309,29 +312,6 @@ function App() {
             </div>
 
             <div className="dashboard">
-                {/* Machine Specs Sidebar */}
-                <div className="specs-section">
-                    <h2>Machine Context</h2>
-                    <div className="spec-row">
-                        <span className="spec-label">Operating System</span>
-                        <span className="spec-value">{system?.os?.distro}</span>
-                    </div>
-                    <div className="spec-row">
-                        <span className="spec-label">Processor</span>
-                        <span className="spec-value">{system?.cpu?.brand?.split(' CPU')[0]}</span>
-                    </div>
-                    <div className="spec-row">
-                        <span className="spec-label">System Memory</span>
-                        <span className="spec-value">{system?.ram?.baseGB} GB Total</span>
-                    </div>
-                    {system?.gpu?.map((g, i) => (
-                        <div className="spec-row" key={i}>
-                            <span className="spec-label">GPU {i + 1}</span>
-                            <span className="spec-value">{g.model} / {g.vramGB}GB VRAM</span>
-                        </div>
-                    ))}
-                </div>
-
                 {/* Compatibility Legend */}
                 <div className="legend-container">
                     <div className="legend-item">

@@ -1,11 +1,9 @@
 # LLM-Checkmate ♟️
 
-**LLM-Checkmate** is a high-performance local hardware analyzer and educational discovery engine for Large Language Models. It maps your machine's exact boundaries (CPU, RAM, VRAM) to the trending model registry on Hugging Face.
+**LLM-Checkmate** is a high-performance educational discovery engine for Large Language Models. It allows you to manually input your hardware specifications (or paste them from your system settings) to instantly see which trending models from the Hugging Face Hub you can run locally.
 
-## 🚀 Features
-
-- **Manual Specification Overrides**: Real-time sliders to simulate different hardware profiles (RAM/VRAM).
-- **Automated Base Specs**: Intelligent detection of local CPU, architecture, and memory.
+- **Smart Spec Parsing**: Paste your system information directly from Windows/Mac settings to auto-configure the analyzer.
+- **Manual Control Center**: Direct numeric inputs for RAM and VRAM to test different hardware scenarios and simulate upgrades.
 - **Expert Recommendation Engine**: Custom inference strategies (GGUF, AWQ, vLLM) based on your hardware vendor.
 - **5-Tier Confidence System**: Precise compatibility scoring (Native, Optimized, Hybrid, Experimental, Cloud Only).
 - **Network Resilience**: Automatic retries and smart DNS fallback for reliable Hugging Face API access.

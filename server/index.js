@@ -1,6 +1,5 @@
 import express from 'express';
 import cors from 'cors';
-import si from 'systeminformation';
 import fetch from 'node-fetch';
 import dotenv from 'dotenv';
 import path from 'path';
@@ -128,42 +127,6 @@ app.get('/api/tasks', (req, res) => {
     res.json(POPULAR_TASKS);
 });
 
-app.get('/api/system-info', async (req, res) => {
-    try {
-        const cpu = await si.cpu();
-        const mem = await si.mem();
-        const os = await si.osInfo();
-        const gpu = await si.graphics();
-
-        const info = {
-            cpu: {
-                brand: cpu.brand,
-                cores: cpu.cores,
-                physicalCores: cpu.physicalCores,
-                architecture: os.arch
-            },
-            ram: {
-                total: mem.total,
-                baseGB: Math.round(mem.total / (1024 ** 3))
-            },
-            os: {
-                platform: os.platform,
-                distro: os.distro,
-                release: os.release
-            },
-            gpu: gpu.controllers.map(g => ({
-                model: g.model,
-                vram: g.vram,
-                vramGB: g.vram ? Math.round(g.vram / 1024) : 0,
-                vendor: g.vendor
-            }))
-        };
-        res.json(info);
-    } catch (error) {
-        res.status(500).json({ error: error.message });
-    }
-});
-
 app.get('/api/recommendations', async (req, res) => {
     try {
         const task = req.query.task || 'text-generation';
@@ -171,30 +134,17 @@ app.get('/api/recommendations', async (req, res) => {
         const manualRam = parseFloat(req.query.manualRam);
         const manualVram = parseFloat(req.query.manualVram);
 
-        let systemSpecs;
-
-        // Use manual overrides if provided
-        if (!isNaN(manualRam) && !isNaN(manualVram)) {
-            systemSpecs = {
-                ramGB: manualRam,
-                vramGB: manualVram,
-                isEntryGPU: false,
-                vendor: 'User Hardware',
-                platform: 'manual'
-            };
-        } else {
-            const mem = await si.mem();
-            const gpuData = await si.graphics();
-            const os = await si.osInfo();
-
-            systemSpecs = {
-                ramGB: mem.total / (1024 ** 3),
-                vramGB: gpuData.controllers.reduce((acc, curr) => acc + (curr.vram || 0), 0) / 1024,
-                isEntryGPU: gpuData.controllers.some(g => g.model.toLowerCase().includes('intel') || g.model.toLowerCase().includes('graphics')),
-                vendor: gpuData.controllers[0]?.vendor || 'Unknown',
-                platform: os.platform
-            };
+        if (isNaN(manualRam) || isNaN(manualVram)) {
+            return res.status(400).json({ error: "Please provide manualRam and manualVram" });
         }
+
+        const systemSpecs = {
+            ramGB: manualRam,
+            vramGB: manualVram,
+            isEntryGPU: false, // User hardware, assume standard performance
+            vendor: 'User Hardware',
+            platform: 'manual'
+        };
 
         const models = await getRecentModels(task, search);
 
