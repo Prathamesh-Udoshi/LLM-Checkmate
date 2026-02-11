@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "llm-checkmate-agent"
+version = "0.1.0"
+authors = [
+  { name="LLM-Checkmate Team", email="author@example.com" },
+]
+description = "Hardware capability scanner for local LLM compatibility."
+readme = "README.md"
+requires-python = ">=3.8"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+]
+dependencies = [
+    "psutil",
+    "requests",
+    "GPUtil",
+    # Optional dependencies handled in code, but good to list
+    "torch; sys_platform == 'linux' or sys_platform == 'win32'", 
+]
+
+[project.scripts]
+llm-checkmate = "llm_checkmate_agent.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["."]  # Looking for packages in root
