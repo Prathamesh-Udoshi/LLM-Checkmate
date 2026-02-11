@@ -23,6 +23,10 @@ function App() {
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState(null);
 
+    // Get Device ID from URL if present (for remote agent scans)
+    const urlParams = new URLSearchParams(window.location.search);
+    const deviceId = urlParams.get('deviceId');
+
     useEffect(() => {
         fetchTasks();
         fetchSystemInfo();
@@ -49,18 +53,26 @@ function App() {
 
     const fetchSystemInfo = async () => {
         try {
-            const res = await fetch('/api/system-info');
+            let url = '/api/system-info';
+            if (deviceId) url += `?deviceId=${deviceId}`;
+
+            const res = await fetch(url);
+            if (!res.ok) throw new Error("System info fetch failed");
+
             const data = await res.json();
             setSystem(data);
         } catch (err) {
-            setError("System unreachable.");
+            setError("System unreachable. Ensure the agent is running or backend is live.");
         }
     };
 
     const fetchRecommendations = async () => {
         setLoading(true);
         try {
-            const res = await fetch(`/api/recommendations?task=${selectedTask}&search=${encodeURIComponent(searchQuery)}`);
+            let url = `/api/recommendations?task=${selectedTask}&search=${encodeURIComponent(searchQuery)}`;
+            if (deviceId) url += `&deviceId=${deviceId}`;
+
+            const res = await fetch(url);
             const data = await res.json();
             setModels(data);
         } catch (err) {
@@ -85,16 +97,46 @@ function App() {
                     <p>
                         Automatically analyze your hardware boundaries and discover trending
                         Large Language Models designed for your specific machine profile.
+                        Scan your local machine or connect to a remote agent.
                     </p>
                     <div className="nav-buttons">
                         <button className="nav-btn" onClick={() => setView('dashboard')}>
-                            Launch Analyzer
+                            Browse Hardware Registry
                         </button>
-                        <button className="nav-btn nav-btn-outline" onClick={() => {
-                            document.getElementById('edu-section').scrollIntoView({ behavior: 'smooth' });
-                        }}>
-                            Learn the Basics
+                        <button className="nav-btn nav-btn-outline" onClick={() => window.scrollTo({ top: 800, behavior: 'smooth' })}>
+                            Get CLI Agent
                         </button>
+                    </div>
+                </section>
+
+                <section className="edu-grid" id="agent-section">
+                    <div className="edu-card">
+                        <div className="edu-tag">01. Setup</div>
+                        <h3>Connect Your Computer</h3>
+                        <p>
+                            Since browsers cannot see your hardware, you need to run our safe scanner on your **local machine**.
+                            Open your terminal (**CMD**, **PowerShell**, or **iTerm**) and run:
+                        </p>
+                        <div className="code-block" style={{ background: '#0a0a0a', padding: '1.2rem', marginTop: '1rem', border: '1px solid var(--border)', borderRadius: '8px', position: 'relative' }}>
+                            <div style={{ fontSize: '0.7rem', color: '#444', marginBottom: '0.5rem', textTransform: 'uppercase' }}>On your local machine:</div>
+                            <code style={{ color: 'var(--primary)', fontFamily: 'JetBrains Mono, monospace', fontSize: '1.1rem', display: 'block' }}>
+                                pip install llm-checkmate-agent<br />
+                                llm-checkmate scan --backend {window.location.origin}
+                            </code>
+                        </div>
+                        <p style={{ fontSize: '0.8rem', color: '#64748b', marginTop: '1rem' }}>
+                            *The agent will provide a personalized link once the scan is complete.*
+                        </p>
+                    </div>
+
+                    <div className="edu-card">
+                        <div className="edu-tag">02. Methodology</div>
+                        <h3>Compatibility Logic</h3>
+                        <p>
+                            LLM-Checkmate analyzes your system's CPU, RAM, and GPU (VRAM) to determine the largest
+                            possible model size (in billions of parameters) you can run. It then cross-references
+                            this with a curated registry of popular LLMs, providing a compatibility score.
+                        </p>
                     </div>
                 </section>
 
@@ -192,7 +234,14 @@ function App() {
             <span className="back-link" onClick={() => setView('landing')}>← Back to Repository Info</span>
 
             <header>
-                <h1>Hardware Compatibility Analyzer</h1>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+                    <h1>Hardware Compatibility Analyzer</h1>
+                    {deviceId && (
+                        <div style={{ background: 'rgba(99, 102, 241, 0.15)', color: 'var(--primary)', padding: '0.3rem 0.8rem', borderRadius: '4px', fontSize: '0.75rem', fontWeight: '500', border: '1px solid var(--primary)' }}>
+                            ● REMOTE AGENT ACTIVE
+                        </div>
+                    )}
+                </div>
                 <div className="subtitle">Real-time resource mapping for {system?.cpu?.brand}.</div>
             </header>
 
