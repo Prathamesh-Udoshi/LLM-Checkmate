@@ -4,7 +4,8 @@
 
 ## 🚀 Features
 
-- **Hardware Extraction**: Real-time analysis of your OS, CPU architecture, and GPU VRAM.
+- **Manual Specification Overrides**: Real-time sliders to simulate different hardware profiles (RAM/VRAM).
+- **Automated Base Specs**: Intelligent detection of local CPU, architecture, and memory.
 - **Expert Recommendation Engine**: Custom inference strategies (GGUF, AWQ, vLLM) based on your hardware vendor.
 - **5-Tier Confidence System**: Precise compatibility scoring (Native, Optimized, Hybrid, Experimental, Cloud Only).
 - **Network Resilience**: Automatic retries and smart DNS fallback for reliable Hugging Face API access.

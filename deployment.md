@@ -48,8 +48,3 @@ Once the deployment is live, Render will provide a URL (e.g., `https://llm-check
 
 ## ⚠️ Important Note (Free Tier)
 Render's free tier spins down services after 15 minutes of inactivity. When you visit your site after a break, it might take **~60 seconds** to wake up. This is normal for free hosting.
-
-### 💾 Data Persistence
-The backend stores hardware reports from the CLI Agent in **temporary memory**. 
-- If the server restarts or goes to sleep (Common on Free Tier), you will need to run `llm-checkmate scan` again to re-sync your hardware profile.
-- In a production environment, this would be replaced with a database (like MongoDB or PostgreSQL) for permanent storage.

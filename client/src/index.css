@@ -54,6 +54,82 @@ h1 {
     margin-top: 0.5rem;
 }
 
+/* Manual Specification Bar */
+.manual-specs-bar {
+    background: #0a0a0a;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 1.5rem 2rem;
+    margin-bottom: 3rem;
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+}
+
+.manual-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.manual-header h3 {
+    margin: 0;
+    font-size: 0.9rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: #94a3b8;
+}
+
+.switch-container {
+    display: flex;
+    align-items: center;
+    gap: 0.8rem;
+    cursor: pointer;
+}
+
+.switch-label {
+    font-size: 0.85rem;
+    color: white;
+    font-weight: 500;
+}
+
+.manual-controls {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 4rem;
+    transition: opacity 0.3s ease;
+}
+
+.manual-controls.disabled {
+    opacity: 0.3;
+    pointer-events: none;
+}
+
+.manual-group {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+}
+
+.manual-group label {
+    font-size: 0.8rem;
+    color: #64748b;
+    display: flex;
+    justify-content: space-between;
+}
+
+.manual-group label span {
+    color: var(--primary);
+    font-weight: 600;
+    font-family: 'JetBrains Mono', monospace;
+}
+
+.manual-group input[type="range"] {
+    width: 100%;
+    accent-color: var(--primary);
+    cursor: pointer;
+}
+
 /* Minimalist Filter Bar */
 .filter-bar {
     display: flex;

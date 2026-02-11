@@ -124,79 +124,12 @@ async function getRecentModels(task = 'text-generation', search = '') {
     }
 }
 
-// In-memory store for agent-registered devices
-// Structure: { "device-uuid": { cpu: ..., ram: ..., gpu: ..., timestamp: ... } }
-const registeredDevices = {};
-
 app.get('/api/tasks', (req, res) => {
     res.json(POPULAR_TASKS);
 });
 
-// Endpoint to receive data from local Python agent
-app.post('/api/device/register', (req, res) => {
-    try {
-        const { device_id, metrics, timestamp } = req.body;
-
-        if (!device_id || !metrics) {
-            return res.status(400).json({ error: "Missing device_id or metrics" });
-        }
-
-        // Store or update device metrics
-        registeredDevices[device_id] = {
-            ...metrics,
-            lastSeen: new Date(),
-            source: 'agent'
-        };
-
-        console.log(`🔌 Agent connected: ${device_id} (${metrics.os.system})`);
-        res.json({ success: true, message: "Device registered successfully" });
-    } catch (e) {
-        console.error("Device register error:", e);
-        res.status(500).json({ error: e.message });
-    }
-});
-
 app.get('/api/system-info', async (req, res) => {
     try {
-        const { deviceId } = req.query;
-
-        // 1. If Device ID provided, try to fetch from agent registry
-        if (deviceId) {
-            const agentData = registeredDevices[deviceId];
-            if (agentData) {
-                // Map agent format to frontend format
-                const info = {
-                    cpu: {
-                        brand: agentData.cpu.brand,
-                        cores: agentData.cpu.logical_cores,
-                        physicalCores: agentData.cpu.physical_cores,
-                        architecture: agentData.cpu.architecture || 'unknown'
-                    },
-                    ram: {
-                        total: agentData.ram.total_gb * (1024 ** 3), // Convert GB back to bytes for consistency if needed, or update frontend to handle GB. 
-                        // Frontend expects baseGB, so let's just send baseGB directly
-                        baseGB: agentData.ram.total_gb
-                    },
-                    os: {
-                        platform: agentData.os.system,
-                        distro: agentData.os.release || 'Agent OS',
-                        release: agentData.os.version
-                    },
-                    // Handle Multiple GPUs
-                    gpu: agentData.gpu.map(g => ({
-                        model: g.name,
-                        vram: (g.vram_total_gb || 0) * 1024, // Convert to MB if needed, or adjust below
-                        vramGB: g.vram_total_gb || 0,
-                        vendor: 'Unknown' // Agent might not send vendor string explicitly, infer?
-                    }))
-                };
-                return res.json(info);
-            } else {
-                return res.status(404).json({ error: "Device not found" });
-            }
-        }
-
-        // 2. Default: Fallback to Server's Own Specs (Local Mode)
         const cpu = await si.cpu();
         const mem = await si.mem();
         const os = await si.osInfo();
@@ -235,27 +168,21 @@ app.get('/api/recommendations', async (req, res) => {
     try {
         const task = req.query.task || 'text-generation';
         const search = req.query.search || '';
-        const deviceId = req.query.deviceId;
+        const manualRam = parseFloat(req.query.manualRam);
+        const manualVram = parseFloat(req.query.manualVram);
 
         let systemSpecs;
 
-        // 1. Try to load specs from Agent (if Device ID provided)
-        if (deviceId && registeredDevices[deviceId]) {
-            const d = registeredDevices[deviceId];
+        // Use manual overrides if provided
+        if (!isNaN(manualRam) && !isNaN(manualVram)) {
             systemSpecs = {
-                ramGB: d.ram.total_gb,
-                // Sum up VRAM from all GPUs? Or just the best one? usually sum for unified, or max for discrete. 
-                // Let's sum for now as a naive approach, or maybe just take the max if they are not confirming SLI/NVLink.
-                // Actually, for LLMs, splitting across GPUs is common (pipeline parallelism). Let's sum.
-                vramGB: d.gpu.reduce((acc, curr) => acc + (curr.vram_total_gb || 0), 0),
-                isEntryGPU: false, // Agent doesn't explicitly flag this yet, assume false or check names
-                vendor: d.gpu[0]?.name.split(' ')[0] || 'Unknown',
-                platform: d.os.system
+                ramGB: manualRam,
+                vramGB: manualVram,
+                isEntryGPU: false,
+                vendor: 'User Hardware',
+                platform: 'manual'
             };
-            console.log(`🧠 Generating recommendations for Remote Device: ${deviceId}`);
-        }
-        // 2. Fallback to Local Server Specs
-        else {
+        } else {
             const mem = await si.mem();
             const gpuData = await si.graphics();
             const os = await si.osInfo();

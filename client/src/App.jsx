@@ -23,9 +23,9 @@ function App() {
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState(null);
 
-    // Get Device ID from URL if present (for remote agent scans)
-    const urlParams = new URLSearchParams(window.location.search);
-    const deviceId = urlParams.get('deviceId');
+    const [manualRam, setManualRam] = useState(8);
+    const [manualVram, setManualVram] = useState(2);
+    const [useManual, setUseManual] = useState(false);
 
     useEffect(() => {
         fetchTasks();
@@ -39,7 +39,7 @@ function App() {
             }, 500);
             return () => clearTimeout(delayDebounceFn);
         }
-    }, [selectedTask, searchQuery, view]);
+    }, [selectedTask, searchQuery, view, manualRam, manualVram, useManual]);
 
     const fetchTasks = async () => {
         try {
@@ -53,16 +53,18 @@ function App() {
 
     const fetchSystemInfo = async () => {
         try {
-            let url = '/api/system-info';
-            if (deviceId) url += `?deviceId=${deviceId}`;
-
-            const res = await fetch(url);
+            const res = await fetch('/api/system-info');
             if (!res.ok) throw new Error("System info fetch failed");
-
             const data = await res.json();
             setSystem(data);
+
+            // Set initial manual values based on server/local detected specs
+            if (!useManual) {
+                setManualRam(data.ram.baseGB);
+                setManualVram(data.gpu[0]?.vramGB || 0);
+            }
         } catch (err) {
-            setError("System unreachable. Ensure the agent is running or backend is live.");
+            setError("Could not auto-detect hardware. Please use manual entry.");
         }
     };
 
@@ -70,7 +72,9 @@ function App() {
         setLoading(true);
         try {
             let url = `/api/recommendations?task=${selectedTask}&search=${encodeURIComponent(searchQuery)}`;
-            if (deviceId) url += `&deviceId=${deviceId}`;
+            if (useManual) {
+                url += `&manualRam=${manualRam}&manualVram=${manualVram}`;
+            }
 
             const res = await fetch(url);
             const data = await res.json();
@@ -95,49 +99,35 @@ function App() {
                     <div className="edu-tag">Project LLM-Checker</div>
                     <h1>LLM-Checkmate</h1>
                     <p>
-                        Automatically analyze your hardware boundaries and discover trending
-                        Large Language Models designed for your specific machine profile.
-                        Scan your local machine or connect to a remote agent.
+                        Analyze your hardware boundaries and discover Large Language Models
+                        specifically optimized for your machine. No scanners required—just enter your specs.
                     </p>
                     <div className="nav-buttons">
                         <button className="nav-btn" onClick={() => setView('dashboard')}>
-                            Browse Hardware Registry
+                            Open Compatibility Dashboard
                         </button>
                         <button className="nav-btn nav-btn-outline" onClick={() => window.scrollTo({ top: 800, behavior: 'smooth' })}>
-                            Get CLI Agent
+                            How to find my specs?
                         </button>
                     </div>
                 </section>
 
-                <section className="edu-grid" id="agent-section">
+                <section className="edu-grid" id="guide-section">
                     <div className="edu-card">
-                        <div className="edu-tag">01. Setup</div>
-                        <h3>Connect Your Computer</h3>
+                        <div className="edu-tag">Windows</div>
+                        <h3>Find your Specs</h3>
                         <p>
-                            Since browsers cannot see your hardware, you need to run our safe scanner on your **local machine**.
-                            Open your terminal (**CMD**, **PowerShell**, or **iTerm**) and run:
-                        </p>
-                        <div className="code-block" style={{ background: '#0a0a0a', padding: '1.2rem', marginTop: '1rem', border: '1px solid var(--border)', borderRadius: '8px', position: 'relative' }}>
-                            <div style={{ fontSize: '0.7rem', color: '#444', marginBottom: '0.5rem', textTransform: 'uppercase' }}>On your local machine:</div>
-                            <code style={{ color: 'var(--primary)', fontFamily: 'JetBrains Mono, monospace', fontSize: '1.1rem', display: 'block', wordBreak: 'break-all' }}>
-                                python -m pip install "git+https://github.com/Prathamesh-Udoshi/LLM-Checkmate.git#subdirectory=llm-checkmate-agent"<br /><br />
-                                <div style={{ color: '#64748b', fontSize: '0.8rem', marginBottom: '0.5rem' }}># Run the scan (If first command fails, try the second)</div>
-                                llm-checkmate scan --backend {window.location.origin}<br />
-                                python -m llm_checkmate_agent scan --backend {window.location.origin}
-                            </code>
-                        </div>
-                        <p style={{ fontSize: '0.8rem', color: '#64748b', marginTop: '1rem' }}>
-                            *The agent will provide a personalized link once the scan is complete.*
+                            1. Open <b>Settings</b> &gt; <b>System</b> &gt; <b>About</b> to see your <b>Installed RAM</b>.<br /><br />
+                            2. Right-click Taskbar &gt; <b>Task Manager</b> &gt; <b>Performance</b> &gt; <b>GPU</b> to see your <b>Dedicated Video Memory (VRAM)</b>.
                         </p>
                     </div>
 
                     <div className="edu-card">
-                        <div className="edu-tag">02. Methodology</div>
-                        <h3>Compatibility Logic</h3>
+                        <div className="edu-tag">macOS</div>
+                        <h3>Find your Specs</h3>
                         <p>
-                            LLM-Checkmate analyzes your system's CPU, RAM, and GPU (VRAM) to determine the largest
-                            possible model size (in billions of parameters) you can run. It then cross-references
-                            this with a curated registry of popular LLMs, providing a compatibility score.
+                            1. Click the  icon &gt; <b>About This Mac</b>.<br /><br />
+                            2. Look for <b>Memory</b>. Note: On Apple Silicon (M1/M2/M3), memory is "Unified" so RAM and VRAM are the same pool.
                         </p>
                     </div>
                 </section>
@@ -233,19 +223,48 @@ function App() {
         <div className="container">
             {loading && <div className="loading-overlay"></div>}
 
-            <span className="back-link" onClick={() => setView('landing')}>← Back to Repository Info</span>
+            <span className="back-link" onClick={() => setView('landing')}>← Back to Guide</span>
 
             <header>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-                    <h1>Hardware Compatibility Analyzer</h1>
-                    {deviceId && (
-                        <div style={{ background: 'rgba(99, 102, 241, 0.15)', color: 'var(--primary)', padding: '0.3rem 0.8rem', borderRadius: '4px', fontSize: '0.75rem', fontWeight: '500', border: '1px solid var(--primary)' }}>
-                            ● REMOTE AGENT ACTIVE
-                        </div>
-                    )}
-                </div>
+                <h1>Hardware Compatibility Analyzer</h1>
                 <div className="subtitle">Real-time resource mapping for {system?.cpu?.brand}.</div>
             </header>
+
+            {/* Manual Specification Section */}
+            <div className="manual-specs-bar">
+                <div className="manual-header">
+                    <h3>Configure Hardware Baseline</h3>
+                    <label className="switch-container">
+                        <input
+                            type="checkbox"
+                            checked={useManual}
+                            onChange={(e) => setUseManual(e.target.checked)}
+                        />
+                        <span className="switch-label">Enable Manual Override</span>
+                    </label>
+                </div>
+
+                <div className={`manual-controls ${useManual ? 'active' : 'disabled'}`}>
+                    <div className="manual-group">
+                        <label>System RAM (GB): <span>{manualRam} GB</span></label>
+                        <input
+                            type="range" min="2" max="256" step="2"
+                            value={manualRam}
+                            onChange={(e) => setManualRam(parseInt(e.target.value))}
+                            disabled={!useManual}
+                        />
+                    </div>
+                    <div className="manual-group">
+                        <label>GPU VRAM (GB): <span>{manualVram} GB</span></label>
+                        <input
+                            type="range" min="0" max="80" step="1"
+                            value={manualVram}
+                            onChange={(e) => setManualVram(parseInt(e.target.value))}
+                            disabled={!useManual}
+                        />
+                    </div>
+                </div>
+            </div>
 
             {/* Filter Section */}
             <div className="filter-bar">
