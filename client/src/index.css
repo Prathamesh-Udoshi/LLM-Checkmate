@@ -27,7 +27,7 @@ body {
 
 
 .container {
-    padding: 2rem 4rem;
+    padding: 2rem;
     max-width: 1600px;
     margin: 0 auto;
     width: 100%;
@@ -56,105 +56,106 @@ h1 {
 
 /* Manual Specification Bar */
 .manual-specs-bar {
-    background: #0a0a0a;
-    border: 1px solid var(--border);
-    border-radius: 12px;
-    padding: 1.5rem 2rem;
+    background: rgba(10, 10, 10, 0.7);
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 16px;
+    padding: 2.5rem;
     margin-bottom: 3rem;
     display: flex;
     flex-direction: column;
-    gap: 1.5rem;
-}
-
-.manual-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
+    gap: 2rem;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
 }
 
 .manual-header h3 {
     margin: 0;
-    font-size: 0.9rem;
+    font-size: 0.8rem;
     text-transform: uppercase;
-    letter-spacing: 0.05em;
-    color: #94a3b8;
-}
-
-.switch-container {
-    display: flex;
-    align-items: center;
-    gap: 0.8rem;
-    cursor: pointer;
-}
-
-.switch-label {
-    font-size: 0.85rem;
-    color: white;
-    font-weight: 500;
-}
-
-.manual-content {
-    display: flex;
-    flex-direction: column;
-    gap: 1.5rem;
-    transition: opacity 0.3s ease;
-}
-
-.manual-content.disabled {
-    opacity: 0.3;
-    pointer-events: none;
+    letter-spacing: 0.15em;
+    color: #818cf8;
+    /* Indigo accent */
+    font-weight: 700;
 }
 
 .specs-paste-area {
     width: 100%;
-    height: 120px;
-    background: #050505;
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    color: #94a3b8;
-    padding: 1rem;
+    height: 140px;
+    background: rgba(0, 0, 0, 0.4);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 12px;
+    color: #e2e8f0;
+    padding: 1.25rem -1.25rem;
     font-family: 'JetBrains Mono', monospace;
-    font-size: 0.85rem;
+    font-size: 0.9rem;
     resize: vertical;
     outline: none;
+    transition: all 0.3s ease;
 }
 
 .specs-paste-area:focus {
-    border-color: var(--primary);
+    border-color: #6366f1;
+    box-shadow: 0 0 0 4px rgba(99, 102, 241, 0.1);
+    background: rgba(0, 0, 0, 0.6);
 }
 
 .manual-inputs {
     display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 2rem;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 1.5rem;
 }
 
 .input-field {
     display: flex;
     flex-direction: column;
-    gap: 0.5rem;
+    gap: 0.6rem;
 }
 
 .input-field label {
-    font-size: 0.75rem;
-    color: #64748b;
+    font-size: 0.7rem;
+    color: #94a3b8;
     text-transform: uppercase;
-    letter-spacing: 0.05em;
+    letter-spacing: 0.1em;
+    font-weight: 600;
 }
 
 .input-field input {
-    background: #050505;
-    border: 1px solid var(--border);
-    border-radius: 6px;
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 10px;
     color: white;
-    padding: 0.7rem 1rem;
+    padding: 0.8rem 1rem;
     font-size: 1rem;
     outline: none;
     font-family: 'JetBrains Mono', monospace;
+    transition: all 0.2s ease;
 }
 
 .input-field input:focus {
-    border-color: var(--primary);
+    border-color: #6366f1;
+    background: rgba(255, 255, 255, 0.05);
+}
+
+.parse-status-msg {
+    padding: 1rem 1.25rem;
+    border-radius: 10px;
+    font-size: 0.9rem;
+    font-weight: 500;
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+}
+
+.parse-status-msg.success {
+    background: rgba(16, 185, 129, 0.1);
+    color: #10b981;
+    border: 1px solid rgba(16, 185, 129, 0.2);
+}
+
+.parse-status-msg.searching {
+    background: rgba(245, 158, 11, 0.1);
+    color: #f59e0b;
+    border: 1px solid rgba(245, 158, 11, 0.2);
 }
 
 /* Minimalist Filter Bar */
@@ -386,7 +387,7 @@ h1 {
 
 /* Landing Page & Educational Sections */
 .hero {
-    padding: 8rem 0;
+    padding: 6rem 0 4rem 0;
     text-align: center;
     border-bottom: 1px solid var(--border);
 }
@@ -394,18 +395,24 @@ h1 {
 .hero h1 {
     font-size: 4.5rem;
     margin-bottom: 2rem;
-    background: linear-gradient(to bottom, #ffffff 0%, #e2e2e2 100%);
+    line-height: 1.1;
+    font-weight: 800;
+    letter-spacing: -0.04em;
+    color: white;
+}
+
+.hero h1 span {
+    background: linear-gradient(135deg, #818cf8 0%, #c084fc 100%);
     -webkit-background-clip: text;
     background-clip: text;
     -webkit-text-fill-color: transparent;
-    font-weight: 700;
 }
 
 .hero p {
-    font-size: 1.4rem;
-    color: #f8fafc;
-    max-width: 800px;
-    margin: 0 auto 4rem auto;
+    font-size: 1.25rem;
+    color: #94a3b8;
+    max-width: 700px;
+    margin: 0 auto 3rem auto;
     font-weight: 400;
     line-height: 1.6;
 }
@@ -420,29 +427,35 @@ h1 {
     background: white;
     color: black;
     border: none;
-    padding: 0.8rem 2rem;
-    font-size: 0.9rem;
-    font-weight: 600;
+    padding: 1rem 2.5rem;
+    font-size: 1rem;
+    font-weight: 700;
     cursor: pointer;
-    transition: all 0.2s;
+    border-radius: 12px;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .nav-btn-outline {
-    background: transparent;
+    background: rgba(255, 255, 255, 0.03);
     color: white;
-    border: 1px solid var(--border);
+    border: 1px solid rgba(255, 255, 255, 0.1);
 }
 
 .nav-btn:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 10px 20px rgba(0, 0, 0, 0.4);
+    transform: translateY(-4px);
+    box-shadow: 0 12px 24px rgba(0, 0, 0, 0.4);
+}
+
+.nav-btn-outline:hover {
+    background: rgba(255, 255, 255, 0.08);
+    border-color: rgba(255, 255, 255, 0.2);
 }
 
 .edu-grid {
     display: grid;
     grid-template-columns: repeat(2, 1fr);
-    gap: 6rem;
-    padding: 8rem 0;
+    gap: 4rem;
+    padding: 3rem 0;
     max-width: 1200px;
     margin: 0 auto;
     text-align: left;
@@ -450,23 +463,32 @@ h1 {
 
 .edu-card {
     border-top: 1px solid var(--border);
-    padding-top: 2.5rem;
+    padding-top: 2rem;
     display: flex;
     flex-direction: column;
+    height: 100%;
+    /* Ensure equal height */
 }
 
 .edu-card h3 {
     font-size: 1.4rem;
     font-weight: 600;
     color: white;
-    margin-bottom: 1.2rem;
+    margin-bottom: 1rem;
+}
+
+.edu-card h3:not(:first-of-type) {
+    margin-top: 2rem;
 }
 
 .edu-card p {
     font-size: 1.05rem;
     font-weight: 400;
-    color: #f8fafc;
+    color: #94a3b8;
     line-height: 1.8;
+    margin: 0;
+    flex-grow: 1;
+    /* Push content to fill space */
 }
 
 .edu-tag {

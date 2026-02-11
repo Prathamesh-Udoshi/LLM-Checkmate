@@ -133,17 +133,30 @@ app.get('/api/recommendations', async (req, res) => {
         const search = req.query.search || '';
         const manualRam = parseFloat(req.query.manualRam);
         const manualVram = parseFloat(req.query.manualVram);
+        const sharedVram = parseFloat(req.query.sharedVram) || 0;
+        const cpuName = req.query.cpuName || '';
+        const gpuName = req.query.gpuName || '';
 
         if (isNaN(manualRam) || isNaN(manualVram)) {
             return res.status(400).json({ error: "Please provide manualRam and manualVram" });
         }
 
+        // Determine Vendor/Platform Context
+        let vendor = 'General Hardware';
+        if (gpuName.toUpperCase().includes('NVIDIA') || gpuName.toUpperCase().includes('GEFORCE')) vendor = 'NVIDIA';
+        if (gpuName.toUpperCase().includes('AMD') || gpuName.toUpperCase().includes('RADEON')) vendor = 'AMD';
+        if (cpuName.toUpperCase().includes('APPLE') || gpuName.toUpperCase().includes('APPLE')) vendor = 'Apple';
+        if (gpuName.toUpperCase().includes('INTEL')) vendor = 'Intel';
+
         const systemSpecs = {
             ramGB: manualRam,
             vramGB: manualVram,
-            isEntryGPU: false, // User hardware, assume standard performance
-            vendor: 'User Hardware',
-            platform: 'manual'
+            sharedVramGB: sharedVram,
+            isEntryGPU: false,
+            vendor: vendor,
+            cpuName: cpuName,
+            gpuName: gpuName,
+            platform: vendor === 'Apple' ? 'darwin' : 'manual'
         };
 
         const models = await getRecentModels(task, search);
@@ -165,37 +178,43 @@ app.get('/api/recommendations', async (req, res) => {
             let gpuOffload = 0;
 
             // 1. INFERENCE LOGIC (5-Tier System)
+            const hardwareContext = systemSpecs.gpuName || systemSpecs.cpuName || 'your hardware';
 
             // TIER 1: NATIVE PERFORMANCE (FP16/8-bit in VRAM)
             if (systemSpecs.vramGB >= (weights8bit + contextBuffer)) {
                 status = 'Native Performance';
                 badgeClass = 'status-runnable';
-                reasoning = `Perfect Fit. 100% GPU execution at high precision (8-bit/FP16). Expect maximum speed.`;
-                strategy = systemSpecs.vendor.includes('NVIDIA') ? 'vLLM / Hugging Face' : 'Ollama (FP16)';
+                reasoning = `Perfect Fit. 100% GPU execution via ${hardwareContext}. Expect maximum speed.`;
+                strategy = systemSpecs.vendor === 'NVIDIA' ? 'vLLM / Hugging Face' : 'Ollama (FP16)';
                 gpuOffload = 100;
             }
             // TIER 2: OPTIMIZED (4-bit in VRAM)
             else if (systemSpecs.vramGB >= (weights4bit + contextBuffer)) {
                 status = 'Optimized Local';
-                badgeClass = 'status-runnable'; // Reusing green for good fit
-                reasoning = `Excellent Fit. 100% GPU execution using 4-bit quantization. Very fast.`;
-                strategy = systemSpecs.vendor.includes('NVIDIA') ? 'AutoGPTQ / EXL2' : 'Ollama / MLX (4-bit)';
+                badgeClass = 'status-runnable';
+                reasoning = `Excellent Fit for ${hardwareContext} using 4-bit quantization. Very fast.`;
+                strategy = systemSpecs.vendor === 'NVIDIA' ? 'AutoGPTQ / EXL2' : 'Ollama / MLX (4-bit)';
                 gpuOffload = 100;
             }
             // TIER 3: HYBRID (Split CPU/GPU)
             else if ((systemSpecs.vramGB + systemSpecs.ramGB) >= (weights4bit + contextBuffer + 4)) {
-                // Calculate offload percentage
                 const capableVRAM = Math.max(0, systemSpecs.vramGB - contextBuffer);
                 const percentGPU = Math.min(100, Math.round((capableVRAM / weights4bit) * 100));
 
                 status = 'Hybrid Offload';
                 badgeClass = 'status-quant';
-                reasoning = `Partial GPU Fit. ~${percentGPU}% of model runs on GPU, ${100 - percentGPU}% on slower CPU RAM.`;
+
+                if (systemSpecs.vramGB === 0 && systemSpecs.sharedVramGB > 0) {
+                    reasoning = `Runs via Integrated Graphics (${hardwareContext}). Borrowing from System RAM. Expect slow speeds.`;
+                } else {
+                    reasoning = `Runs across ${hardwareContext} and System RAM (~${percentGPU}% GPU offload).`;
+                }
+
                 strategy = 'Llama.cpp (GGUF)';
-                if (percentGPU < 20) {
+                if (percentGPU < 20 && systemSpecs.vramGB > 0) {
                     status = 'CPU Bottleneck';
                     badgeClass = 'status-warning';
-                    reasoning = 'Mostly CPU execution. Generation will be slow (1-3 tokens/s).';
+                    reasoning = `Mostly CPU execution on ${systemSpecs.cpuName || 'System'}. Slow generation expected.`;
                 }
                 gpuOffload = percentGPU;
             }
@@ -203,15 +222,15 @@ app.get('/api/recommendations', async (req, res) => {
             else if ((systemSpecs.ramGB + systemSpecs.vramGB) >= (model.params * 0.5 + 2)) {
                 status = 'Experimental';
                 badgeClass = 'status-warning';
-                reasoning = 'Requires extreme quantization (2-bit/3-bit) to fit. Intelligence loss likely.';
+                reasoning = `Very tight fit on ${hardwareContext}. Requires extreme quantization for stability.`;
                 strategy = 'Llama.cpp (IQ3_XS / Q2_K)';
-                gpuOffload = 0; // Assuming minimal to no GPU offload for experimental CPU-heavy
+                gpuOffload = 0;
             }
             // TIER 5: CLOUD ONLY
             else {
                 status = 'Cloud Only';
                 badgeClass = 'status-impossible';
-                reasoning = `Requires ${(weights4bit).toFixed(1)}GB+ RAM. System has ${(systemSpecs.ramGB + systemSpecs.vramGB).toFixed(1)}GB usable.`;
+                reasoning = `Model exceeds total memory on ${hardwareContext}. Requires ${(weights4bit).toFixed(1)}GB+ RAM.`;
                 strategy = 'RunPod / Lambda Labs';
                 gpuOffload = 0;
             }

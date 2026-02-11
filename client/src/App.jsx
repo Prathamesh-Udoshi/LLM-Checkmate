@@ -22,9 +22,13 @@ function App() {
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState(null);
 
-    const [manualRam, setManualRam] = useState(8);
-    const [manualVram, setManualVram] = useState(2);
+    const [manualRam, setManualRam] = useState(16);
+    const [manualVram, setManualVram] = useState(0);
+    const [manualSharedVram, setManualSharedVram] = useState(0);
     const [rawSpecs, setRawSpecs] = useState('');
+    const [parseStatus, setParseStatus] = useState('');
+    const [detectedProcessor, setDetectedProcessor] = useState('');
+    const [detectedGpu, setDetectedGpu] = useState('');
 
     useEffect(() => {
         fetchTasks();
@@ -32,22 +36,100 @@ function App() {
 
     // Smart Parser for Pasted Specs
     useEffect(() => {
-        if (!rawSpecs) return;
-
-        // Match RAM (e.g., "Installed RAM 16.0 GB", "Memory: 32 GB", "8GB RAM")
-        const ramMatch = rawSpecs.match(/(?:Installed RAM|Memory|RAM)[:\s]*(\d+(?:\.\d+)?)\s*GB/i);
-        if (ramMatch && ramMatch[1]) {
-            setManualRam(Math.round(parseFloat(ramMatch[1])));
+        if (!rawSpecs) {
+            setParseStatus('');
+            setDetectedProcessor('');
+            setDetectedGpu('');
+            return;
         }
 
-        // Match VRAM if user pastes GPU info (e.g., "Dedicated Video Memory: 4096 MB" or "8 GB VRAM")
-        const vramGBMatch = rawSpecs.match(/(\d+(?:\.\d+)?)\s*GB\s*VRAM/i);
-        const vramMBMatch = rawSpecs.match(/(?:Dedicated Video Memory|VRAM)[:\s]*(\d+)\s*MB/i);
+        let detectedRam = null;
+        let detectedVram = null;
+        let isIntegrated = false;
+        let procName = '';
+        let gpuName = '';
 
-        if (vramGBMatch && vramGBMatch[1]) {
-            setManualVram(Math.round(parseFloat(vramGBMatch[1])));
-        } else if (vramMBMatch && vramMBMatch[1]) {
-            setManualVram(Math.round(parseInt(vramMBMatch[1]) / 1024));
+        // Processor Regex (Windows/Mac)
+        const procRegex = /(?:Processor|Chip)[:\s–]*([^\n\t\r]+)/i;
+        const procMatch = rawSpecs.match(procRegex);
+        if (procMatch) {
+            procName = procMatch[1].trim();
+            setDetectedProcessor(procName);
+        }
+
+        // GPU Name Regex (Captures NVIDIA, AMD, Intel, or Apple GPU brands)
+        const gpuBrandRegex = /(?:NVIDIA|GeForce|Radeon|Intel\(R\)\sUHD|Iris|Intel\(R\)\sIris|Apple\sM\d|GPU\s\d+)[:\s–]*([^\n\t\r]+)/i;
+        const gpuMatch = rawSpecs.match(gpuBrandRegex);
+        if (gpuMatch) {
+            gpuName = gpuMatch[0].trim();
+            // Clean up if it just says "GPU 0" or starts with a brand and captures too much
+            setDetectedGpu(gpuName);
+        }
+
+        // RAM Regex
+        const ramRegex = /(?:Installed RAM|Memory|Total Memory|RAM)[:\s–]*(\d+(?:\.\d+)?)\s*(GB|MB)/i;
+        const ramMatch = rawSpecs.match(ramRegex);
+        if (ramMatch) {
+            let val = parseFloat(ramMatch[1]);
+            if (ramMatch[2].toUpperCase() === 'MB') val = val / 1024;
+            detectedRam = Math.round(val);
+            setManualRam(detectedRam);
+        }
+
+        // 1. Explicitly check for SHARED memory first to avoid false positives in Dedicated check
+        const sharedRegex = /Shared GPU Memory[:\s–]*(\d+(?:\.\d+)?)\s*(GB|MB)/i;
+        const sharedMatch = rawSpecs.match(sharedRegex);
+
+        // 2. Check for DEDICATED memory (excluding anything that says "Shared")
+        const dedicatedRegex = /(?:Dedicated Video Memory|Dedicated GPU Memory)[:\s–]*(\d+(?:\.\d+)?)\s*(GB|MB)/i;
+        const dedicatedMatch = rawSpecs.match(dedicatedRegex);
+
+        // 3. Fallback for generic VRAM mentions (only if "Dedicated" or "Shared" weren't matched precisely)
+        const genericVramRegex = /(?<!Shared\s)(?:VRAM|GPU Memory)[:\s–]*(\d+(?:\.\d+)?)\s*(GB|MB)/i;
+        const genericMatch = rawSpecs.match(genericVramRegex);
+
+        if (dedicatedMatch) {
+            let val = parseFloat(dedicatedMatch[1]);
+            if (dedicatedMatch[2].toUpperCase() === 'MB') val = val / 1024;
+            detectedVram = Math.round(val);
+            setManualVram(detectedVram);
+        } else if (genericMatch) {
+            let val = parseFloat(genericMatch[1]);
+            if (genericMatch[2].toUpperCase() === 'MB') val = val / 1024;
+            detectedVram = Math.round(val);
+            setManualVram(detectedVram);
+        }
+
+        if (sharedMatch) {
+            let val = parseFloat(sharedMatch[1]);
+            if (sharedMatch[2].toUpperCase() === 'MB') val = val / 1024;
+            setManualSharedVram(Math.round(val));
+
+            // Note: We don't overwrite manualVram here if dedicated was found, 
+            // but we use it to set the "Integrated" flag if dedicated is missing or 0.
+            if (!detectedVram || detectedVram < 0.5) {
+                isIntegrated = true;
+                setManualVram(0);
+            }
+        } else {
+            setManualSharedVram(0);
+        }
+
+        if (detectedRam || detectedVram || procName || gpuName) {
+            let msgParts = [];
+            if (procName) msgParts.push(`CPU: ${procName}`);
+            if (gpuName) msgParts.push(`GPU: ${gpuName}`);
+            if (detectedRam) msgParts.push(`${detectedRam}GB RAM`);
+
+            if (isIntegrated) {
+                msgParts.push(`Integrated Graphics`);
+            } else if (detectedVram) {
+                msgParts.push(`${detectedVram}GB Dedicated VRAM`);
+            }
+
+            setParseStatus(`✨ Detected: ${msgParts.join(' + ')}`);
+        } else {
+            setParseStatus('🔍 No hardware patterns found. Try entering values manually below.');
         }
     }, [rawSpecs]);
 
@@ -58,7 +140,7 @@ function App() {
             }, 500);
             return () => clearTimeout(delayDebounceFn);
         }
-    }, [selectedTask, searchQuery, view, manualRam, manualVram]);
+    }, [selectedTask, searchQuery, view, manualRam, manualVram, manualSharedVram]);
 
     const fetchTasks = async () => {
         try {
@@ -73,7 +155,11 @@ function App() {
     const fetchRecommendations = async () => {
         setLoading(true);
         try {
-            let url = `/api/recommendations?task=${selectedTask}&search=${encodeURIComponent(searchQuery)}&manualRam=${manualRam}&manualVram=${manualVram}`;
+            let url = `/api/recommendations?task=${selectedTask}&search=${encodeURIComponent(searchQuery)}` +
+                `&manualRam=${manualRam}&manualVram=${manualVram}` +
+                `&sharedVram=${manualSharedVram}` +
+                `&cpuName=${encodeURIComponent(detectedProcessor)}` +
+                `&gpuName=${encodeURIComponent(detectedGpu)}`;
 
             const res = await fetch(url);
             const data = await res.json();
@@ -95,18 +181,18 @@ function App() {
         return (
             <div className="container">
                 <section className="hero">
-                    <div className="edu-tag">Project LLM-Checker</div>
-                    <h1>LLM-Checkmate</h1>
+                    <div className="edu-tag">Hardware Discovery Engine</div>
+                    <h1>LLM Checkmate</h1>
                     <p>
-                        Analyze your hardware boundaries and discover Large Language Models
-                        specifically optimized for your machine. No scanners required—just enter your specs.
+                        Analyze your local hardware constraints and discover Large Language Models
+                        optimized for your specific silicon. No scanners, no risk just science.
                     </p>
                     <div className="nav-buttons">
                         <button className="nav-btn" onClick={() => setView('dashboard')}>
-                            Open Compatibility Dashboard
+                            Start Compatibility Analysis
                         </button>
                         <button className="nav-btn nav-btn-outline" onClick={() => window.scrollTo({ top: 800, behavior: 'smooth' })}>
-                            How to find my specs?
+                            How to find specs?
                         </button>
                     </div>
                 </section>
@@ -114,19 +200,25 @@ function App() {
                 <section className="edu-grid" id="guide-section">
                     <div className="edu-card">
                         <div className="edu-tag">Windows</div>
-                        <h3>Find your Specs</h3>
+                        <h3>Step 1: Get RAM</h3>
                         <p>
-                            1. Open <b>Settings</b> &gt; <b>System</b> &gt; <b>About</b> to see your <b>Installed RAM</b>.<br /><br />
-                            2. Right-click Taskbar &gt; <b>Task Manager</b> &gt; <b>Performance</b> &gt; <b>GPU</b> to see your <b>Dedicated Video Memory (VRAM)</b>.
+                            Open <b>Settings</b> &gt; <b>System</b> &gt; <b>About</b>. Copy the text under <b>Device Specifications</b> to get your <b>Installed RAM</b>.
+                        </p>
+                        <h3>Step 2: Get GPU (VRAM)</h3>
+                        <p>
+                            Right-click Taskbar &gt; <b>Task Manager</b> &gt; <b>Performance</b> &gt; <b>GPU</b>.<br /><br />
+                            If you see <b>Dedicated GPU Memory</b>, <b>Shared GPU Memory</b>, or both, enter them in the respective fields.
                         </p>
                     </div>
 
                     <div className="edu-card">
-                        <div className="edu-tag">macOS</div>
-                        <h3>Find your Specs</h3>
+                        <div className="edu-tag">Integrated Graphics</div>
+                        <h3>The "Double-Count" Trap</h3>
                         <p>
-                            1. Click the  icon &gt; <b>About This Mac</b>.<br /><br />
-                            2. Look for <b>Memory</b>. Note: On Apple Silicon (M1/M2/M3), memory is "Unified" so RAM and VRAM are the same pool.
+                            <b>Shared GPU Memory</b> is not extra memory, it is just a portion of your System RAM that the GPU is allowed to borrow.
+                            <br /><br />
+                            If we entered both 8GB RAM and 4GB Shared VRAM, the app would think you have 12GB total, which is physically impossible.
+                            Keeping VRAM at <b>0</b> ensures the app calculates correctly against your true 8GB limit.
                         </p>
                     </div>
                 </section>
@@ -226,15 +318,19 @@ function App() {
 
             <header>
                 <h1>Hardware Compatibility Analyzer</h1>
-                <div className="subtitle">Real-time resource mapping based on your custom specifications.</div>
+                <div className="subtitle">
+                    {detectedProcessor || detectedGpu
+                        ? `Resource profiling for ${detectedProcessor}${detectedProcessor && detectedGpu ? ' \u2022 ' : ''}${detectedGpu}`
+                        : 'Real-time resource mapping based on your custom specifications.'}
+                </div>
             </header>
 
             {/* Manual Specification Section */}
             <div className="manual-specs-bar">
                 <div className="manual-header">
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem' }}>
-                        <h3>Configure Your Hardware</h3>
-                        <p style={{ fontSize: '0.75rem', color: '#64748b' }}>Copy from Settings &gt; System &gt; About and paste below, or enter manually.</p>
+                        <h3>Paste Specifications</h3>
+                        <p style={{ fontSize: '0.75rem', color: '#64748b' }}>Copy 'About' info for RAM, then 'Task Manager' info for VRAM.</p>
                     </div>
                 </div>
 
@@ -248,6 +344,17 @@ function App() {
                         }}
                     />
 
+                    {parseStatus && (
+                        <div className={`parse-status-msg ${parseStatus.includes('Detected') ? 'success' : 'searching'}`}>
+                            {parseStatus}
+                        </div>
+                    )}
+
+                    <div className="manual-inputs-header">
+                        <h4>Fine-Tune Detected Hardware</h4>
+                        <p>Adjust these values manually to match your specific setup if parsing missed anything.</p>
+                    </div>
+
                     <div className="manual-inputs">
                         <div className="input-field">
                             <label>System RAM (GB)</label>
@@ -258,11 +365,28 @@ function App() {
                             />
                         </div>
                         <div className="input-field">
-                            <label>GPU VRAM (GB)</label>
+                            <label>GPU Name</label>
+                            <input
+                                type="text"
+                                placeholder="e.g. NVIDIA RTX 3060"
+                                value={detectedGpu}
+                                onChange={(e) => setDetectedGpu(e.target.value)}
+                            />
+                        </div>
+                        <div className="input-field">
+                            <label>Dedicated GPU VRAM (GB)</label>
                             <input
                                 type="number"
                                 value={manualVram}
                                 onChange={(e) => setManualVram(parseInt(e.target.value) || 0)}
+                            />
+                        </div>
+                        <div className="input-field">
+                            <label>Shared GPU Memory (GB)</label>
+                            <input
+                                type="number"
+                                value={manualSharedVram}
+                                onChange={(e) => setManualSharedVram(parseInt(e.target.value) || 0)}
                             />
                         </div>
                     </div>
