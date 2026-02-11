@@ -246,15 +246,38 @@ app.get('/api/recommendations', async (req, res) => {
                 fineTuning = 'Not Feasible';
             }
 
+            // 3. PERFORMANCE PREDICTION (TPS Heuristic)
+            let predictedTPS = 0;
+            if (status.includes('Native') || status.includes('Optimized')) {
+                const baseTPS = 80;
+                predictedTPS = Math.round((baseTPS / (model.params / 7)) * (systemSpecs.vendor === 'Apple' ? 0.7 : 1));
+            } else if (status === 'Hybrid Offload') {
+                predictedTPS = Math.round(5 + (gpuOffload / 100) * 15);
+            } else if (status === 'CPU Bottleneck') {
+                predictedTPS = Math.round(1.5 + (systemSpecs.ramGB / 64) * 2);
+            }
+
+            // 4. OPTIMIZED CLI COMMAND
+            let optimizedCommand = '';
+            if (status !== 'Cloud Only') {
+                if (systemSpecs.vendor === 'Apple' || strategy.includes('Ollama')) {
+                    optimizedCommand = `ollama run ${model.name.toLowerCase().split(' ')[0]}`;
+                } else {
+                    optimizedCommand = `./llama-cli -m ${model.name.toLowerCase().split(' ')[0]}.gguf -ngl ${Math.round(gpuOffload)}`;
+                }
+            }
+
             return {
                 ...model,
                 status,
-                badgeClass, // Sending class directly to frontend
+                badgeClass,
                 reasoning,
                 strategy,
                 fineTuning,
                 gpuOffload,
-                requirements: { fp16: weights16bit, int8: weights8bit, int4: weights4bit }
+                predictedTPS,
+                optimizedCommand,
+                requirements: { fp16: weights16bit.toFixed(1), int8: weights8bit.toFixed(1), int4: weights4bit.toFixed(1) }
             };
         });
 

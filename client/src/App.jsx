@@ -26,7 +26,7 @@ function App() {
     const [manualVram, setManualVram] = useState(0);
     const [manualSharedVram, setManualSharedVram] = useState(0);
     const [rawSpecs, setRawSpecs] = useState('');
-    const [parseStatus, setParseStatus] = useState('');
+    const [parseStatus, setParseStatus] = useState({ text: '', type: '' });
     const [detectedProcessor, setDetectedProcessor] = useState('');
     const [detectedGpu, setDetectedGpu] = useState('');
 
@@ -37,7 +37,7 @@ function App() {
     // Smart Parser for Pasted Specs
     useEffect(() => {
         if (!rawSpecs) {
-            setParseStatus('');
+            setParseStatus({ text: '', type: '' });
             setDetectedProcessor('');
             setDetectedGpu('');
             return;
@@ -127,11 +127,94 @@ function App() {
                 msgParts.push(`${detectedVram}GB Dedicated VRAM`);
             }
 
-            setParseStatus(`✨ Detected: ${msgParts.join(' + ')}`);
+            setParseStatus({ text: `✨ Detected: ${msgParts.join(' + ')}`, type: 'success' });
         } else {
-            setParseStatus('🔍 No hardware patterns found. Try entering values manually below.');
+            setParseStatus({ text: '🔍 No hardware patterns found. Try entering values manually below.', type: 'searching' });
         }
     }, [rawSpecs]);
+
+    const getVramHeuristic = (name) => {
+        const gpu = name.toUpperCase();
+        // NVIDIA RTX 40 Series
+        if (gpu.includes('4090')) return 24;
+        if (gpu.includes('4080')) return 16;
+        if (gpu.includes('4070 TI')) return 12;
+        if (gpu.includes('4070')) return 12;
+        if (gpu.includes('4060 TI')) return 16; // 16GB or 8GB variant, defaulting to 16 for conservative planning or 8. Let's do 8 as it's common.
+        if (gpu.includes('4060')) return 8;
+
+        // NVIDIA RTX 30 Series
+        if (gpu.includes('3090 TI')) return 24;
+        if (gpu.includes('3090')) return 24;
+        if (gpu.includes('3080 TI')) return 12;
+        if (gpu.includes('3080')) return 10; // or 12, common is 10
+        if (gpu.includes('3070 TI')) return 8;
+        if (gpu.includes('3070')) return 8;
+        if (gpu.includes('3060 TI')) return 8;
+        if (gpu.includes('3060')) return 12; // 3060 uniquely has 12GB
+        if (gpu.includes('3050')) return 8;
+
+        // NVIDIA RTX 20 Series
+        if (gpu.includes('2080 TI')) return 11;
+        if (gpu.includes('2080')) return 8;
+        if (gpu.includes('2070')) return 8;
+        if (gpu.includes('2060')) return 6;
+
+        // GTX Series
+        if (gpu.includes('1660 TI') || gpu.includes('1660 SUPER')) return 6;
+        if (gpu.includes('1650')) return 4;
+        if (gpu.includes('1080 TI')) return 11;
+        if (gpu.includes('1080')) return 8;
+        if (gpu.includes('1070')) return 8;
+        if (gpu.includes('1060')) return 6;
+
+        // AMD Radeon
+        if (gpu.includes('7900 XTX')) return 24;
+        if (gpu.includes('7900 XT')) return 20;
+        if (gpu.includes('6900') || gpu.includes('6800')) return 16;
+        if (gpu.includes('6700')) return 12;
+        if (gpu.includes('6600')) return 8;
+
+        return null;
+    };
+
+    const autoDetectHardware = () => {
+        setParseStatus({ text: '⚡ Probing hardware via browser APIs...', type: 'searching' });
+        let ramDetected = 16;
+        let gpuName = '';
+
+        if (navigator.deviceMemory) {
+            ramDetected = Math.round(navigator.deviceMemory);
+            setManualRam(ramDetected);
+        }
+
+        try {
+            const canvas = document.createElement('canvas');
+            const gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
+            const debugInfo = gl.getExtension('WEBGL_debug_renderer_info');
+
+            if (debugInfo) {
+                const renderer = gl.getParameter(debugInfo.UNMASKED_RENDERER_WEBGL);
+                gpuName = renderer.replace(/Direct3D11/i, '').replace(/vs_\d+_\d+ ps_\d+_\d+/i, '').trim();
+                setDetectedGpu(gpuName);
+
+                const heuristicVram = getVramHeuristic(gpuName);
+                if (heuristicVram !== null) {
+                    setManualVram(heuristicVram);
+                    setManualSharedVram(Math.round(ramDetected / 2));
+                    setParseStatus({ text: `✅ Detected ${gpuName} (${heuristicVram}GB VRAM).`, type: 'success' });
+                } else if (gpuName.toLowerCase().match(/intel|iris|uhd|graphics|amd radeon\(tm\) graphics/)) {
+                    setManualVram(0);
+                    setManualSharedVram(Math.round(ramDetected / 2));
+                    setParseStatus({ text: '⚠️ Integrated GPU detected. If you have a dedicated card, ensure the browser is set to "High Performance" in OS settings.', type: 'warning' });
+                } else {
+                    setParseStatus({ text: `❓ GPU "${gpuName}" detected but VRAM could not be estimated. Please enter it manually.`, type: 'warning' });
+                }
+            }
+        } catch (e) {
+            setParseStatus({ text: '❌ Hardware detection failed. Please enter specs manually.', type: 'error' });
+        }
+    };
 
     useEffect(() => {
         if (view === 'dashboard') {
@@ -329,9 +412,12 @@ function App() {
             <div className="manual-specs-bar">
                 <div className="manual-header">
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem' }}>
-                        <h3>Paste Specifications</h3>
-                        <p style={{ fontSize: '0.75rem', color: '#64748b' }}>Copy 'About' info for RAM, then 'Task Manager' info for VRAM.</p>
+                        <h3>Configure Device Profile</h3>
+                        <p style={{ fontSize: '0.75rem', color: '#64748b' }}>Use auto-detect or paste system info for an instant mapping.</p>
                     </div>
+                    <button className="auto-detect-btn" onClick={autoDetectHardware}>
+                        <Zap size={14} /> Auto-Detect Hardware
+                    </button>
                 </div>
 
                 <div className="manual-content">
@@ -344,9 +430,9 @@ function App() {
                         }}
                     />
 
-                    {parseStatus && (
-                        <div className={`parse-status-msg ${parseStatus.includes('Detected') ? 'success' : 'searching'}`}>
-                            {parseStatus}
+                    {parseStatus.text && (
+                        <div className={`parse-status-msg ${parseStatus.type}`}>
+                            {parseStatus.text}
                         </div>
                     )}
 
@@ -472,24 +558,34 @@ function App() {
                                     <div className="model-identity">
                                         <div className="model-name">{model.name}</div>
                                         <div className="model-meta">
-                                            {model.params}B Parameters • {model.downloads.toLocaleString()} downloads
+                                            {model.params}B Params • {model.predictedTPS} tokens/sec
                                         </div>
                                     </div>
 
-                                    <div className={`status-badge ${model.badgeClass}`}>
-                                        {model.status}
+                                    <div className="status-container">
+                                        <div className={`status-badge ${model.badgeClass}`}>
+                                            {model.status}
+                                        </div>
+                                        <div className="status-reasoning">{model.reasoning}</div>
                                     </div>
 
                                     <div className="strategy-box">
-                                        {model.strategy}
-                                        <div style={{ fontSize: '0.7rem', color: '#475569', marginTop: '0.4rem' }}>
-                                            Fine Tuning: {model.fineTuning}
-                                        </div>
+                                        <div className="strategy-label">{model.strategy}</div>
+                                        <div className="fine-tuning-label">Fine-Tuning: {model.fineTuning}</div>
+                                        {model.optimizedCommand && (
+                                            <div className="command-snippet" onClick={() => {
+                                                navigator.clipboard.writeText(model.optimizedCommand);
+                                                alert('Command copied to clipboard!');
+                                            }}>
+                                                <code>{model.optimizedCommand}</code>
+                                                <Terminal size={12} />
+                                            </div>
+                                        )}
                                     </div>
 
                                     <div className="links">
-                                        <a href={`https://huggingface.co/${model.id}`} target="_blank" rel="noreferrer">
-                                            HF Profile ↗
+                                        <a href={`https://huggingface.co/${model.id}`} target="_blank" rel="noreferrer" className="hf-link">
+                                            View Stats <ChevronRight size={14} />
                                         </a>
                                     </div>
                                 </div>
