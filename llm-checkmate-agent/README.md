@@ -25,12 +25,16 @@ You can install the agent directly from the source code:
 
 ## Usage
 
-Once installed, the `llm-checkmate` command is available globally in your terminal.
+If the `llm-checkmate` command is not recognized after installation (common PATH issue), use the `python -m` fallback.
 
 ### 1. Run a Scan
 Collects hardware info and sends it to the backend:
 
 ```bash
+# Recommended
+python -m llm_checkmate_agent scan
+
+# Or (if in PATH)
 llm-checkmate scan
 ```
 

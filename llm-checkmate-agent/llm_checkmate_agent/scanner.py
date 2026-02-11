@@ -14,10 +14,12 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 logger = logging.getLogger(__name__)
 
 def get_cpu_info():
-    """Collects CPU details with exact brand name detection on Windows."""
+    """Collects CPU details with exact brand name detection."""
     try:
         brand = platform.processor()
-        if platform.system() == "Windows":
+        system = platform.system()
+        
+        if system == "Windows":
             try:
                 import subprocess
                 # This specific command returns the "Friendly Name" e.g., 11th Gen Intel(R) Core(TM) i3...
@@ -28,6 +30,13 @@ def get_cpu_info():
                     brand = lines[1]
             except Exception as e:
                 logger.warning(f"Could not get detailed CPU name via WMIC: {e}")
+                pass # Fallback to platform.processor()
+        elif system == "Darwin": # macOS
+            try:
+                import subprocess
+                brand = subprocess.check_output(["sysctl", "-n", "machdep.cpu.brand_string"]).decode().strip()
+            except Exception as e:
+                logger.warning(f"Could not get detailed CPU name via sysctl: {e}")
                 pass # Fallback to platform.processor()
 
         info = {

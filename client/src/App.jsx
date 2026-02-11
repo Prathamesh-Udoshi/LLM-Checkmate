@@ -119,9 +119,11 @@ function App() {
                         </p>
                         <div className="code-block" style={{ background: '#0a0a0a', padding: '1.2rem', marginTop: '1rem', border: '1px solid var(--border)', borderRadius: '8px', position: 'relative' }}>
                             <div style={{ fontSize: '0.7rem', color: '#444', marginBottom: '0.5rem', textTransform: 'uppercase' }}>On your local machine:</div>
-                            <code style={{ color: 'var(--primary)', fontFamily: 'JetBrains Mono, monospace', fontSize: '1.1rem', display: 'block' }}>
-                                pip install llm-checkmate-agent<br />
-                                llm-checkmate scan --backend {window.location.origin}
+                            <code style={{ color: 'var(--primary)', fontFamily: 'JetBrains Mono, monospace', fontSize: '1.1rem', display: 'block', wordBreak: 'break-all' }}>
+                                python -m pip install "git+https://github.com/Prathamesh-Udoshi/LLM-Checkmate.git#subdirectory=llm-checkmate-agent"<br /><br />
+                                <div style={{ color: '#64748b', fontSize: '0.8rem', marginBottom: '0.5rem' }}># Run the scan (If first command fails, try the second)</div>
+                                llm-checkmate scan --backend {window.location.origin}<br />
+                                python -m llm_checkmate_agent scan --backend {window.location.origin}
                             </code>
                         </div>
                         <p style={{ fontSize: '0.8rem', color: '#64748b', marginTop: '1rem' }}>
