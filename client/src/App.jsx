@@ -30,6 +30,7 @@ function App() {
     const [detectedProcessor, setDetectedProcessor] = useState('');
     const [detectedGpu, setDetectedGpu] = useState('');
     const [contextWindow, setContextWindow] = useState(2048);
+    const [discoveryMode, setDiscoveryMode] = useState('choice'); // 'choice', 'auto', 'paste', 'manual'
 
     useEffect(() => {
         fetchTasks();
@@ -123,41 +124,49 @@ function App() {
     };
 
     const autoDetectHardware = () => {
+        setDiscoveryMode('auto');
         setParseStatus({ text: '⚡ Probing hardware via browser APIs...', type: 'searching' });
-        let ramDetected = 16;
-        let gpuName = '';
 
-        if (navigator.deviceMemory) {
-            ramDetected = Math.round(navigator.deviceMemory);
-            setManualRam(ramDetected);
-        }
+        // Artificial delay for visual feedback (Make the scan feel 'real')
+        setTimeout(() => {
+            let ramDetected = 16;
+            let gpuName = '';
 
-        try {
-            const canvas = document.createElement('canvas');
-            const gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
-            const debugInfo = gl.getExtension('WEBGL_debug_renderer_info');
-
-            if (debugInfo) {
-                const renderer = gl.getParameter(debugInfo.UNMASKED_RENDERER_WEBGL);
-                gpuName = renderer.replace(/Direct3D11/i, '').replace(/vs_\d+_\d+ ps_\d+_\d+/i, '').trim();
-                setDetectedGpu(gpuName);
-
-                const heuristicVram = getVramHeuristic(gpuName);
-                if (heuristicVram !== null) {
-                    setManualVram(heuristicVram);
-                    setManualSharedVram(Math.round(ramDetected / 2));
-                    setParseStatus({ text: `✅ Detected ${gpuName} (${heuristicVram}GB VRAM).`, type: 'success' });
-                } else if (gpuName.toLowerCase().match(/intel|iris|uhd|graphics|amd radeon\(tm\) graphics/)) {
-                    setManualVram(0);
-                    setManualSharedVram(Math.round(ramDetected / 2));
-                    setParseStatus({ text: '⚠️ Integrated GPU detected. If you have a dedicated card, ensure the browser is set to "High Performance" in OS settings.', type: 'warning' });
-                } else {
-                    setParseStatus({ text: `❓ GPU "${gpuName}" detected but VRAM could not be estimated. Please enter it manually.`, type: 'warning' });
-                }
+            if (navigator.deviceMemory) {
+                ramDetected = Math.round(navigator.deviceMemory);
+                setManualRam(ramDetected);
             }
-        } catch (e) {
-            setParseStatus({ text: '❌ Hardware detection failed. Please enter specs manually.', type: 'error' });
-        }
+
+            try {
+                const canvas = document.createElement('canvas');
+                const gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
+                const debugInfo = gl.getExtension('WEBGL_debug_renderer_info');
+
+                if (debugInfo) {
+                    const renderer = gl.getParameter(debugInfo.UNMASKED_RENDERER_WEBGL);
+                    gpuName = renderer.replace(/Direct3D11/i, '').replace(/vs_\d+_\d+ ps_\d+_\d+/i, '').trim();
+                    setDetectedGpu(gpuName);
+
+                    const heuristicVram = getVramHeuristic(gpuName);
+                    if (heuristicVram !== null) {
+                        setManualVram(heuristicVram);
+                        setManualSharedVram(Math.round(ramDetected / 2));
+                        setParseStatus({ text: `✅ Detected ${gpuName} (${heuristicVram}GB VRAM).`, type: 'success' });
+                    } else if (gpuName.toLowerCase().match(/intel|iris|uhd|graphics|amd radeon\(tm\) graphics/)) {
+                        setManualVram(0);
+                        setManualSharedVram(Math.round(ramDetected / 2));
+                        setParseStatus({
+                            text: '⚠️ Integrated GPU detected. For accurate LLM results, your browser needs access to your Dedicated GPU (NVIDIA/AMD). Please set your Browser to "High Performance" in Windows Graphic Settings.',
+                            type: 'warning'
+                        });
+                    } else {
+                        setParseStatus({ text: `❓ GPU "${gpuName}" detected but VRAM could not be estimated. Please enter it manually.`, type: 'warning' });
+                    }
+                }
+            } catch (e) {
+                setParseStatus({ text: '❌ Hardware detection failed. Please enter specs manually.', type: 'error' });
+            }
+        }, 1200);
     };
 
     useEffect(() => {
@@ -353,75 +362,124 @@ function App() {
                 </div>
             </header>
 
-            {/* Manual Specification Section */}
-            <div className="manual-specs-bar">
-                <div className="manual-header">
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem' }}>
-                        <h3>Configure Device Profile</h3>
-                        <p style={{ fontSize: '0.75rem', color: '#64748b' }}>Use auto-detect or paste system info for an instant mapping.</p>
-                    </div>
-                    <button className="auto-detect-btn" onClick={autoDetectHardware}>
-                        <Zap size={14} /> Auto-Detect Hardware
-                    </button>
-                </div>
-
-                <div className="manual-content">
-                    <textarea
-                        className="specs-paste-area"
-                        placeholder="Paste specs here (e.g. Device name DESKTOP-S6S... Installed RAM 8.00 GB ...)"
-                        value={rawSpecs}
-                        onChange={(e) => {
-                            setRawSpecs(e.target.value);
-                        }}
-                    />
-
-                    {parseStatus.text && (
-                        <div className={`parse-status-msg ${parseStatus.type}`}>
-                            {parseStatus.text}
+            {/* Discovery Hub - New Simplified Navigation */}
+            <div className="discovery-hub">
+                {discoveryMode === 'choice' && (
+                    <div className="choice-grid">
+                        <div className="choice-card" onClick={autoDetectHardware}>
+                            <Zap className="choice-icon" size={32} />
+                            <h3>Auto-Scan</h3>
+                            <p>Instant browser-based detection (Easiest)</p>
                         </div>
-                    )}
-
-                    <div className="manual-inputs-header">
-                        <h4>Fine-Tune Detected Hardware</h4>
-                        <p>Adjust these values manually to match your specific setup if parsing missed anything.</p>
-                    </div>
-
-                    <div className="manual-inputs">
-                        <div className="input-field">
-                            <label>System RAM (GB)</label>
-                            <input
-                                type="number"
-                                value={manualRam}
-                                onChange={(e) => setManualRam(parseInt(e.target.value) || 0)}
-                            />
+                        <div className="choice-card" onClick={() => setDiscoveryMode('paste')}>
+                            <Terminal className="choice-icon" size={32} />
+                            <h3>Smart Paste</h3>
+                            <p>Paste specs from System settings</p>
                         </div>
-                        <div className="input-field">
-                            <label>GPU Name</label>
-                            <input
-                                type="text"
-                                placeholder="e.g. NVIDIA RTX 3060"
-                                value={detectedGpu}
-                                onChange={(e) => setDetectedGpu(e.target.value)}
-                            />
-                        </div>
-                        <div className="input-field">
-                            <label>Dedicated GPU VRAM (GB)</label>
-                            <input
-                                type="number"
-                                value={manualVram}
-                                onChange={(e) => setManualVram(parseInt(e.target.value) || 0)}
-                            />
-                        </div>
-                        <div className="input-field">
-                            <label>Shared GPU Memory (GB)</label>
-                            <input
-                                type="number"
-                                value={manualSharedVram}
-                                onChange={(e) => setManualSharedVram(parseInt(e.target.value) || 0)}
-                            />
+                        <div className="choice-card" onClick={() => setDiscoveryMode('manual')}>
+                            <Layers className="choice-icon" size={32} />
+                            <h3>Manual Entry</h3>
+                            <p>Type your specs individually</p>
                         </div>
                     </div>
-                </div>
+                )}
+
+                {(discoveryMode === 'paste' || discoveryMode === 'auto') && (
+                    <div className="hub-active-mode">
+                        <div className="mode-header">
+                            <button className="back-btn-sm" onClick={() => setDiscoveryMode('choice')}>← Other Methods</button>
+                            <h3>{discoveryMode === 'paste' ? 'Smart Spec Import' : 'Auto-Detection Progress'}</h3>
+                        </div>
+
+                        {discoveryMode === 'paste' && (
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                                <div style={{ fontSize: '0.85rem', color: '#94a3b8', marginBottom: '1rem' }}>
+                                    <b>How to get your specs?</b> Windows (Settings &gt; About &gt; Device specs) | Mac (About this Mac) | Linux (<code>neofetch</code> or <code>lscpu</code>)
+                                </div>
+                                <textarea
+                                    className="specs-paste-area"
+                                    placeholder="Paste your system info here (Ctrl+V)..."
+                                    value={rawSpecs}
+                                    onChange={(e) => setRawSpecs(e.target.value)}
+                                    autoFocus
+                                />
+                            </div>
+                        )}
+
+                        {parseStatus.text && (
+                            <div className={`parse-status-msg ${parseStatus.type}`}>
+                                {parseStatus.type === 'searching' && <Activity className="spin" size={16} />}
+                                {parseStatus.type === 'success' && <CheckCircle size={16} />}
+                                {parseStatus.type === 'error' && <AlertTriangle size={16} />}
+                                {parseStatus.text}
+                            </div>
+                        )}
+
+                        {parseStatus.type === 'success' && (
+                            <button className="proceed-btn" onClick={() => setDiscoveryMode('manual')}>
+                                Review & Confirm Specs <ChevronRight size={16} />
+                            </button>
+                        )}
+                    </div>
+                )}
+
+                {discoveryMode === 'manual' && (
+                    <div className="hub-active-mode">
+                        <div className="mode-header">
+                            <button className="back-btn-sm" onClick={() => setDiscoveryMode('choice')}>← Restart Search</button>
+                            <h3>Verified Hardware Profile</h3>
+                        </div>
+
+                        <div className="manual-inputs">
+                            <div className="input-field">
+                                <label>System RAM (GB)</label>
+                                <input
+                                    type="number"
+                                    value={manualRam}
+                                    onChange={(e) => setManualRam(parseInt(e.target.value) || 0)}
+                                />
+                            </div>
+                            <div className="input-field">
+                                <label>GPU Model</label>
+                                <input
+                                    type="text"
+                                    value={detectedGpu}
+                                    onChange={(e) => setDetectedGpu(e.target.value)}
+                                />
+                            </div>
+                            <div className="input-field">
+                                <label>Dedicated VRAM (GB)</label>
+                                <input
+                                    type="number"
+                                    value={manualVram}
+                                    onChange={(e) => setManualVram(parseInt(e.target.value) || 0)}
+                                />
+                            </div>
+                            <div className="input-field">
+                                <label>Shared Memory (GB)</label>
+                                <input
+                                    type="number"
+                                    value={manualSharedVram}
+                                    onChange={(e) => setManualSharedVram(parseInt(e.target.value) || 0)}
+                                />
+                            </div>
+                        </div>
+
+                        <div className="hardware-summary-bar">
+                            <div className="summary-content">
+                                <span className="summary-label">Active Hardware Profile</span>
+                                <div className="summary-value">
+                                    {detectedGpu || 'System'}
+                                    <span className="summary-badge">{manualVram}GB VRAM</span>
+                                    <span className="summary-badge">{manualRam}GB RAM</span>
+                                </div>
+                            </div>
+                            <button className="minimize-btn" onClick={() => window.scrollTo({ top: 400, behavior: 'smooth' })}>
+                                Analyze Compatibility ↓
+                            </button>
+                        </div>
+                    </div>
+                )}
             </div>
 
             {/* Filter Section */}
