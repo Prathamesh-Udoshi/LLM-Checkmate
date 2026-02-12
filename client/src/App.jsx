@@ -9,7 +9,8 @@ import {
     CheckCircle,
     Zap,
     ExternalLink,
-    ChevronRight
+    ChevronRight,
+    Brain
 } from 'lucide-react';
 
 function App() {
@@ -31,52 +32,45 @@ function App() {
     const [detectedGpu, setDetectedGpu] = useState('');
     const [contextWindow, setContextWindow] = useState(2048);
     const [discoveryMode, setDiscoveryMode] = useState('choice'); // 'choice', 'auto', 'paste', 'manual'
+    const [isAnalysisStarted, setIsAnalysisStarted] = useState(false);
 
     useEffect(() => {
         fetchTasks();
     }, []);
 
-    // AI Spec Parser (Backend-Powered)
-    useEffect(() => {
-        if (!rawSpecs) {
-            setParseStatus({ text: '', type: '' });
-            return;
+    // AI Spec Parser (Manual Trigger)
+    const triggerAIParse = async () => {
+        if (!rawSpecs) return;
+        setParseStatus({ text: '🧠 AI Parsing in progress...', type: 'searching' });
+        try {
+            const res = await fetch('/api/parse-specs', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ text: rawSpecs })
+            });
+            const data = await res.json();
+
+            if (data.ram) setManualRam(data.ram);
+            if (data.vram !== undefined) setManualVram(data.vram);
+            if (data.sharedVram !== undefined) setManualSharedVram(data.sharedVram);
+            if (data.cpu) setDetectedProcessor(data.cpu);
+            if (data.gpu) setDetectedGpu(data.gpu);
+
+            let msgParts = [];
+            if (data.cpu) msgParts.push(`CPU: ${data.cpu}`);
+            if (data.gpu) msgParts.push(`GPU: ${data.gpu}`);
+            if (data.ram) msgParts.push(`${data.ram}GB RAM`);
+            if (data.vram) msgParts.push(`${data.vram}GB VRAM`);
+            if (data.sharedVram) msgParts.push(`${data.sharedVram}GB Shared`);
+
+            setParseStatus({
+                text: `✨ AI Detected: ${msgParts.join(' | ')}`,
+                type: 'success'
+            });
+        } catch (err) {
+            setParseStatus({ text: '❌ AI Parser failed. Using local regex fallback...', type: 'error' });
         }
-
-        const parseHardware = async () => {
-            setParseStatus({ text: '🧠 AI Parsing in progress...', type: 'searching' });
-            try {
-                const res = await fetch('/api/parse-specs', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ text: rawSpecs })
-                });
-                const data = await res.json();
-
-                if (data.ram) setManualRam(data.ram);
-                if (data.vram !== undefined) setManualVram(data.vram);
-                if (data.sharedVram !== undefined) setManualSharedVram(data.sharedVram);
-                if (data.cpu) setDetectedProcessor(data.cpu);
-                if (data.gpu) setDetectedGpu(data.gpu);
-
-                let msgParts = [];
-                if (data.cpu) msgParts.push(`CPU: ${data.cpu}`);
-                if (data.gpu) msgParts.push(`GPU: ${data.gpu}`);
-                if (data.ram) msgParts.push(`${data.ram}GB RAM`);
-                if (data.vram) msgParts.push(`${data.vram}GB VRAM`);
-
-                setParseStatus({
-                    text: `✨ AI Detected: ${msgParts.join(' | ')}`,
-                    type: 'success'
-                });
-            } catch (err) {
-                setParseStatus({ text: '❌ AI Parser failed. Using local regex fallback...', type: 'error' });
-            }
-        };
-
-        const timeoutId = setTimeout(parseHardware, 800);
-        return () => clearTimeout(timeoutId);
-    }, [rawSpecs]);
+    };
 
     const getVramHeuristic = (name) => {
         const gpu = name.toUpperCase();
@@ -170,13 +164,13 @@ function App() {
     };
 
     useEffect(() => {
-        if (view === 'dashboard') {
+        if (view === 'dashboard' && isAnalysisStarted) {
             const delayDebounceFn = setTimeout(() => {
                 fetchRecommendations();
             }, 500);
             return () => clearTimeout(delayDebounceFn);
         }
-    }, [selectedTask, searchQuery, view, manualRam, manualVram, manualSharedVram, contextWindow]);
+    }, [selectedTask, searchQuery, view, manualRam, manualVram, manualSharedVram, contextWindow, isAnalysisStarted]);
 
     const fetchTasks = async () => {
         try {
@@ -206,6 +200,19 @@ function App() {
         } finally {
             setLoading(false);
         }
+    };
+
+    const handleStartAnalysis = () => {
+        setIsAnalysisStarted(true);
+        setTimeout(() => {
+            window.scrollTo({ top: 800, behavior: 'smooth' });
+        }, 100);
+    };
+
+    const handleRestartSearch = () => {
+        setDiscoveryMode('choice');
+        setIsAnalysisStarted(false);
+        setModels([]);
     };
 
     const providers = ['All', ...new Set(models.map(m => m.company))];
@@ -393,8 +400,8 @@ function App() {
 
                         {discoveryMode === 'paste' && (
                             <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-                                <div style={{ fontSize: '0.85rem', color: '#94a3b8', marginBottom: '1rem' }}>
-                                    <b>How to get your specs?</b> Windows (Settings &gt; About &gt; Device specs) | Mac (About this Mac) | Linux (<code>neofetch</code> or <code>lscpu</code>)
+                                <div style={{ fontSize: '0.85rem', color: '#abb0b7', marginBottom: '1rem' }}>
+                                    <b>How to get your specs?</b> Windows (Settings &gt; About) | Mac (About this Mac)
                                 </div>
                                 <textarea
                                     className="specs-paste-area"
@@ -403,6 +410,9 @@ function App() {
                                     onChange={(e) => setRawSpecs(e.target.value)}
                                     autoFocus
                                 />
+                                <button className="proceed-btn" onClick={triggerAIParse} disabled={!rawSpecs || parseStatus.type === 'searching'} style={{ marginTop: '0', alignSelf: 'flex-start' }}>
+                                    <Brain size={16} /> {parseStatus.type === 'searching' ? 'AI Analyzing...' : 'Scan System Info'}
+                                </button>
                             </div>
                         )}
 
@@ -426,7 +436,7 @@ function App() {
                 {discoveryMode === 'manual' && (
                     <div className="hub-active-mode">
                         <div className="mode-header">
-                            <button className="back-btn-sm" onClick={() => setDiscoveryMode('choice')}>← Restart Search</button>
+                            <button className="back-btn-sm" onClick={handleRestartSearch}>← Restart Search</button>
                             <h3>Verified Hardware Profile</h3>
                         </div>
 
@@ -435,12 +445,13 @@ function App() {
                                 <label>System RAM (GB)</label>
                                 <input
                                     type="number"
+                                    step="0.1"
                                     value={manualRam}
-                                    onChange={(e) => setManualRam(parseInt(e.target.value) || 0)}
+                                    onChange={(e) => setManualRam(parseFloat(e.target.value) || 0)}
                                 />
                             </div>
                             <div className="input-field">
-                                <label>GPU Model</label>
+                                <label>GPU Model (Dedicated)</label>
                                 <input
                                     type="text"
                                     value={detectedGpu}
@@ -451,16 +462,18 @@ function App() {
                                 <label>Dedicated VRAM (GB)</label>
                                 <input
                                     type="number"
+                                    step="0.1"
                                     value={manualVram}
-                                    onChange={(e) => setManualVram(parseInt(e.target.value) || 0)}
+                                    onChange={(e) => setManualVram(parseFloat(e.target.value) || 0)}
                                 />
                             </div>
                             <div className="input-field">
                                 <label>Shared Memory (GB)</label>
                                 <input
                                     type="number"
+                                    step="0.1"
                                     value={manualSharedVram}
-                                    onChange={(e) => setManualSharedVram(parseInt(e.target.value) || 0)}
+                                    onChange={(e) => setManualSharedVram(parseFloat(e.target.value) || 0)}
                                 />
                             </div>
                         </div>
@@ -470,11 +483,12 @@ function App() {
                                 <span className="summary-label">Active Hardware Profile</span>
                                 <div className="summary-value">
                                     {detectedGpu || 'System'}
-                                    <span className="summary-badge">{manualVram}GB VRAM</span>
-                                    <span className="summary-badge">{manualRam}GB RAM</span>
+                                    <span className="summary-badge" title="Physical VRAM on GPU">{manualVram}GB VRAM</span>
+                                    <span className="summary-badge" title="Borrowed from System RAM">{manualSharedVram}GB Shared Memory</span>
+                                    <span className="summary-badge" title="Total RAM">{manualRam}GB RAM</span>
                                 </div>
                             </div>
-                            <button className="minimize-btn" onClick={() => window.scrollTo({ top: 400, behavior: 'smooth' })}>
+                            <button className="minimize-btn" onClick={handleStartAnalysis}>
                                 Analyze Compatibility ↓
                             </button>
                         </div>

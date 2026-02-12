@@ -142,10 +142,91 @@ app.get('/api/tasks', (req, res) => {
     res.json(POPULAR_TASKS);
 });
 
-app.post('/api/parse-specs', (req, res) => {
-    const { text } = req.body;
-    if (!text) return res.status(400).json({ error: "No text provided" });
+const HF_API_URL = "https://router.huggingface.co/v1/chat/completions";
 
+async function parseSpecsWithAI(text) {
+    const messages = [
+        {
+            role: "system",
+            content: "You are a hardware expert. Extract specifications into JSON. Return ONLY the JSON object. Fields: ram (int GB), vram (int GB), sharedVram (int GB), cpu (string), gpu (string), isIntegrated (boolean)."
+        },
+        {
+            role: "user",
+            content: `Extract specs from this text: "${text}"`
+        }
+    ];
+
+    let response;
+    // 1. Prioritize OpenAI if key is present
+    if (process.env.OPENAI_API_KEY) {
+        console.log("[AI Parser] Using OpenAI (gpt-4o-mini)...");
+        response = await fetch("https://api.openai.com/v1/chat/completions", {
+            headers: {
+                "Authorization": `Bearer ${process.env.OPENAI_API_KEY}`,
+                "Content-Type": "application/json"
+            },
+            method: "POST",
+            body: JSON.stringify({
+                model: "gpt-4o-mini",
+                messages: messages,
+                response_format: { type: "json_object" }
+            }),
+        });
+    }
+    // 2. Fallback to Hugging Face
+    else if (process.env.HF_TOKEN) {
+        console.log("[AI Parser] Using Hugging Face (Gemma-2)...");
+        response = await fetch(HF_API_URL, {
+            headers: {
+                "Authorization": `Bearer ${process.env.HF_TOKEN}`,
+                "Content-Type": "application/json"
+            },
+            method: "POST",
+            body: JSON.stringify({
+                model: "google/gemma-2-9b-it",
+                messages: messages,
+                max_tokens: 500,
+                temperature: 0.1,
+                response_format: { type: "json_object" }
+            }),
+        });
+    } else {
+        throw new Error("No AI API keys found (OpenAI or HF)");
+    }
+
+    const result = await response.json();
+
+    if (result.error) {
+        throw new Error(`AI Provider Error: ${result.error.message || JSON.stringify(result.error)}`);
+    }
+
+    let content = result.choices?.[0]?.message?.content || "";
+
+    // Improved JSON Extraction (Look for the first '{' and last '}')
+    const jsonStart = content.indexOf('{');
+    const jsonEnd = content.lastIndexOf('}');
+
+    if (jsonStart !== -1 && jsonEnd !== -1) {
+        content = content.substring(jsonStart, jsonEnd + 1);
+    }
+
+    try {
+        const parsed = JSON.parse(content);
+        return {
+            ram: parseFloat(parsed.ram) || 0,
+            vram: parseFloat(parsed.vram) || 0,
+            sharedVram: parseFloat(parsed.sharedVram) || 0,
+            cpu: parsed.cpu || "",
+            gpu: parsed.gpu || "",
+            isIntegrated: !!parsed.isIntegrated
+        };
+    } catch (e) {
+        console.error("[AI Parser] Failed to parse JSON. Content received:", content);
+        throw new Error("Invalid structure returned from AI provider");
+    }
+}
+
+function parseSpecsWithRegex(text) {
     const specs = {
         ram: 0,
         vram: 0,
@@ -163,7 +244,7 @@ app.post('/api/parse-specs', (req, res) => {
     if (ramMatch) {
         let val = parseFloat(ramMatch[1]);
         if (ramMatch[2].toUpperCase().startsWith('M')) val /= 1024;
-        specs.ram = Math.round(val);
+        specs.ram = val;
     }
 
     // 2. GPU Extraction (Keywords + Context)
@@ -187,21 +268,22 @@ app.post('/api/parse-specs', (req, res) => {
     if (vramMatch) {
         let val = parseFloat(vramMatch[1]);
         if (vramMatch[2].toUpperCase().startsWith('M')) val /= 1024;
-        specs.vram = Math.round(val);
+        specs.vram = val;
     }
 
-    // 4. Shared VRAM
-    const sharedMatch = text.match(/(?:Shared|Compartilhada)[:\s–]*(\d+(?:\.\d+)?)\s*(GB|MB)/i);
+    // 4. Shared VRAM (Supports "Shared Memory", "Shared GPU Memory", "Shared System Memory", "System Video Memory", etc.)
+    const sharedMatch = text.match(/(?:Shared|Compartilhada)(?:\s+System|\s+GPU)?\s*(?:Memory|VRAM|Memória)[:\s–]*(\d+(?:\.\d+)?)\s*(GB|MB)/i) ||
+        text.match(/(?:System Video Memory)[:\s–]*(\d+(?:\.\d+)?)\s*(GB|MB)/i);
     if (sharedMatch) {
         let val = parseFloat(sharedMatch[1]);
         if (sharedMatch[2].toUpperCase().startsWith('M')) val /= 1024;
-        specs.sharedVram = Math.round(val);
+        specs.sharedVram = val;
     }
 
     // 5. Intelligent Integrated Detection
     if (!specs.vram && (specs.gpu.toLowerCase().includes('intel') || specs.gpu.toLowerCase().includes('iris') || specs.gpu.toLowerCase().includes('uhd'))) {
         specs.isIntegrated = true;
-        if (specs.ram > 0) specs.sharedVram = Math.round(specs.ram / 2);
+        if (specs.ram > 0) specs.sharedVram = specs.ram / 2;
     }
 
     // 6. CPU Extraction
@@ -210,7 +292,24 @@ app.post('/api/parse-specs', (req, res) => {
         specs.cpu = cpuMatch[1].trim();
     }
 
-    res.json(specs);
+    return specs;
+}
+
+app.post('/api/parse-specs', async (req, res) => {
+    const { text } = req.body;
+    if (!text) return res.status(400).json({ error: "No text provided" });
+
+    console.log(`[AI Parser] Received input length: ${text.length}`);
+
+    try {
+        const aiParsed = await parseSpecsWithAI(text);
+        console.log(`[AI Parser] Success (AI Mode)`);
+        return res.json(aiParsed);
+    } catch (e) {
+        console.warn(`[AI Parser] Fallback to Regex Mode: ${e.message}`);
+        const regexParsed = parseSpecsWithRegex(text);
+        res.json(regexParsed);
+    }
 });
 
 app.get('/api/recommendations', async (req, res) => {
@@ -347,17 +446,31 @@ app.get('/api/recommendations', async (req, res) => {
                 fineTuning = 'Not Feasible';
             }
 
-            // 3. PERFORMANCE PREDICTION (TPS Heuristic)
+            // 3. NEURAL PERFORMANCE PREDICTION (Multi-Factor Scoring)
             let predictedTPS = 0;
-            if (status.includes('Native') || status.includes('Optimized')) {
-                const baseTPS = 80;
-                predictedTPS = Math.round((baseTPS / (model.params / 7)) * (systemSpecs.vendor === 'Apple' ? 0.7 : 1));
-            } else if (status === 'Hybrid Offload') {
-                // Scale between 5 (CPU) and 25 (Low GPU)
-                predictedTPS = Math.round(5 + (gpuOffload / 100) * 20);
-            } else if (status === 'CPU Bottleneck' || status === 'Experimental') {
-                // Measured heuristic for modern DDR4/DDR5 RAM
-                predictedTPS = parseFloat((1.2 + (systemSpecs.ramGB / 128) * 2).toFixed(1));
+
+            if (status !== 'Cloud Only') {
+                const isApple = systemSpecs.vendor === 'Apple';
+                const isNvidia = systemSpecs.vendor === 'NVIDIA';
+
+                // Base speed determined by Model Complexity vs Hardware Tier
+                let performanceScore = 1.0;
+
+                if (status.includes('Native')) performanceScore = 2.5;     // High Bandwidth VRAM
+                else if (status.includes('Optimized')) performanceScore = 2.0; // Efficient 4-bit
+                else if (status === 'Hybrid Offload') performanceScore = 0.8;  // PCIe Bottleneck
+                else performanceScore = 0.3;                                   // RAM Bandwidth Limit
+
+                // Vendor Multipliers
+                if (isApple) performanceScore *= 1.2;  // Unified Memory Advantage
+                if (isNvidia) performanceScore *= 1.1; // CUDA Optimization Advantage
+
+                const baseModelSpeed = 400 / (model.params + (contextWindow / 2000));
+                predictedTPS = (baseModelSpeed * performanceScore).toFixed(1);
+
+                // Clamp for realism
+                if (predictedTPS > 120) predictedTPS = "> 100";
+                if (predictedTPS < 0.5) predictedTPS = "~0.5";
             } else {
                 predictedTPS = 'N/A';
             }
