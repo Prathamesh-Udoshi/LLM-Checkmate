@@ -16,7 +16,7 @@
 
 body {
     margin: 0;
-    background-color: #050505;
+    background-color: #141414;
 }
 
 #root {
@@ -49,7 +49,7 @@ h1 {
 }
 
 .subtitle {
-    color: #64748b;
+    color: #dfe2e7;
     font-size: 0.9rem;
     margin-top: 0.5rem;
 }
@@ -210,7 +210,7 @@ h1 {
 
 .input-field label {
     font-size: 0.75rem;
-    color: #94a3b8;
+    color: #b4b9c1;
     text-transform: uppercase;
     letter-spacing: 0.12em;
     font-weight: 700;
@@ -335,7 +335,7 @@ h1 {
     font-size: 0.7rem;
     text-transform: uppercase;
     letter-spacing: 0.1em;
-    color: #475569;
+    color: #acb1b7;
     margin-bottom: 0.75rem;
 }
 
@@ -382,7 +382,7 @@ h1 {
 .provider-btn {
     background: transparent;
     border: none;
-    color: #475569;
+    color: #b5bac1;
     font-size: 0.9rem;
     padding: 0;
     cursor: pointer;
@@ -419,7 +419,7 @@ h1 {
     font-size: 0.7rem;
     text-transform: uppercase;
     letter-spacing: 0.15em;
-    color: #475569;
+    color: #a9b0b9;
 }
 
 .model-row {
@@ -467,7 +467,7 @@ h1 {
 
 .status-reasoning {
     font-size: 0.8rem;
-    color: #64748b;
+    color: #bbbfc4;
     line-height: 1.5;
 }
 
@@ -486,7 +486,7 @@ h1 {
 
 .fine-tuning-label {
     font-size: 0.75rem;
-    color: #475569;
+    color: #abb0b7;
 }
 
 .command-snippet {
@@ -645,7 +645,7 @@ h1 {
 }
 
 .hero h1 span {
-    background: linear-gradient(135deg, #818cf8 0%, #c084fc 100%);
+    background: linear-gradient(135deg, #bdc0dc 0%, #c084fc 100%);
     -webkit-background-clip: text;
     background-clip: text;
     -webkit-text-fill-color: transparent;

@@ -69,6 +69,7 @@ const fetchWithRetry = async (url, options = {}, retries = 3) => {
 };
 
 async function getRecentModels(task = 'text-generation', search = '') {
+    const startTime = Date.now();
     try {
         let url = `https://huggingface.co/api/models?pipeline_tag=${task}&sort=downloads&direction=-1&limit=100`;
         if (search) {
@@ -79,11 +80,13 @@ async function getRecentModels(task = 'text-generation', search = '') {
         const models = await response.json();
 
         if (!Array.isArray(models)) {
-            console.warn(`HF API did not return an array for task: ${task}. Response:`, models);
+            console.warn(`[HF API] Unexpected response format for task: ${task}.`);
             return [];
         }
 
-        console.log(`Fetched ${models.length} models for task: ${task}`);
+        const duration = Date.now() - startTime;
+        const modelNames = models.slice(0, 3).map(m => m.id.split('/').pop()).join(', ');
+        console.log(`[Discovery] Task: ${task} | Query: "${search || 'None'}" | Found: ${models.length} models | Samples: [${modelNames}...] | Latency: ${duration}ms`);
 
         return models.map(m => {
             // Improved parameter estimation for encoder-decoder models
@@ -384,6 +387,15 @@ app.get('/api/recommendations', async (req, res) => {
                 requirements: { fp16: weights16bit.toFixed(1), int8: weights8bit.toFixed(1), int4: weights4bit.toFixed(1) }
             };
         });
+
+        // 5. ANALYTICAL LOGGING
+        const stats = recommendations.reduce((acc, rec) => {
+            acc[rec.status] = (acc[rec.status] || 0) + 1;
+            return acc;
+        }, {});
+
+        console.log(`[Analyzer] Profile: ${manualRam}GB RAM | ${manualVram}GB VRAM | Vendor: ${vendor} | Context: ${contextWindow} tokens`);
+        console.log(`[Results] Native: ${stats['Native Performance'] || 0} | Optimized: ${stats['Optimized Local'] || 0} | Hybrid: ${stats['Hybrid Offload'] || 0} | Impossible: ${stats['Cloud Only'] || 0}`);
 
         res.json(recommendations);
     } catch (error) {
