@@ -107,10 +107,22 @@ async function getRecentModels(task = 'text-generation', search = '') {
             if (provider.toLowerCase().includes('microsoft')) provider = 'Microsoft';
             if (provider.toLowerCase().includes('tiiuae')) provider = 'TII (Falcon)';
 
+            // Max Context Detection (Heuristics for reliability)
+            let maxContext = 4096; // Default safe floor
+            const id = m.id.toLowerCase();
+            if (id.includes('llama-3.1') || id.includes('128k')) maxContext = 131072;
+            else if (id.includes('llama-3')) maxContext = 8192;
+            else if (id.includes('gemma-2')) maxContext = 8192;
+            else if (id.includes('mistral-7b-v0.3')) maxContext = 32768;
+            else if (id.includes('phi-3')) maxContext = 128000;
+            else if (id.includes('phi-3-mini-4k')) maxContext = 4096;
+            else if (id.includes('yi-') || id.includes('vision')) maxContext = 16384;
+
             return {
                 id: m.id,
                 name: m.id.split('/').pop(),
                 params: params,
+                maxContext: maxContext,
                 company: provider === m.id ? 'Community' : provider, // Fix for models without providers
                 downloads: m.downloads || 0, // Fallback if missing
                 task: task,
@@ -127,6 +139,77 @@ app.get('/api/tasks', (req, res) => {
     res.json(POPULAR_TASKS);
 });
 
+app.post('/api/parse-specs', (req, res) => {
+    const { text } = req.body;
+    if (!text) return res.status(400).json({ error: "No text provided" });
+
+    const specs = {
+        ram: 0,
+        vram: 0,
+        sharedVram: 0,
+        cpu: '',
+        gpu: '',
+        isIntegrated: false
+    };
+
+    // Advanced heuristics (The "AI-like" smarts)
+    const lowerText = text.toLowerCase();
+
+    // 1. RAM Extraction
+    const ramMatch = text.match(/(?:RAM|Memory|Instalada)[:\s–]*(\d+(?:\.\d+)?)\s*(GB|MB|G|M)/i);
+    if (ramMatch) {
+        let val = parseFloat(ramMatch[1]);
+        if (ramMatch[2].toUpperCase().startsWith('M')) val /= 1024;
+        specs.ram = Math.round(val);
+    }
+
+    // 2. GPU Extraction (Keywords + Context)
+    const gpuKeywords = ['NVIDIA', 'RTX', 'GTX', 'Radeon', 'Intel(R) UHD', 'Iris', 'Arc', 'Apple M1', 'Apple M2', 'Apple M3', 'Apple M4'];
+    for (const kw of gpuKeywords) {
+        if (text.toUpperCase().includes(kw.toUpperCase())) {
+            // Find the line containing this keyword
+            const lines = text.split('\n');
+            const gpuLine = lines.find(l => l.toUpperCase().includes(kw.toUpperCase()));
+            if (gpuLine) {
+                specs.gpu = gpuLine.trim().split(/[:\t]/).pop().trim();
+                // Clean up if it's too long
+                if (specs.gpu.length > 50) specs.gpu = gpuLine.match(new RegExp(`${kw}[^,\\n]+`, 'i'))?.[0] || kw;
+                break;
+            }
+        }
+    }
+
+    // 3. VRAM Extraction (Dedicated)
+    const vramMatch = text.match(/(?:Dedicated|VRAM|Memória de Vídeo)[:\s–]*(\d+(?:\.\d+)?)\s*(GB|MB)/i);
+    if (vramMatch) {
+        let val = parseFloat(vramMatch[1]);
+        if (vramMatch[2].toUpperCase().startsWith('M')) val /= 1024;
+        specs.vram = Math.round(val);
+    }
+
+    // 4. Shared VRAM
+    const sharedMatch = text.match(/(?:Shared|Compartilhada)[:\s–]*(\d+(?:\.\d+)?)\s*(GB|MB)/i);
+    if (sharedMatch) {
+        let val = parseFloat(sharedMatch[1]);
+        if (sharedMatch[2].toUpperCase().startsWith('M')) val /= 1024;
+        specs.sharedVram = Math.round(val);
+    }
+
+    // 5. Intelligent Integrated Detection
+    if (!specs.vram && (specs.gpu.toLowerCase().includes('intel') || specs.gpu.toLowerCase().includes('iris') || specs.gpu.toLowerCase().includes('uhd'))) {
+        specs.isIntegrated = true;
+        if (specs.ram > 0) specs.sharedVram = Math.round(specs.ram / 2);
+    }
+
+    // 6. CPU Extraction
+    const cpuMatch = text.match(/(?:Processor|Processador|CPU)[:\s–]*([^\n\t\r]+)/i);
+    if (cpuMatch) {
+        specs.cpu = cpuMatch[1].trim();
+    }
+
+    res.json(specs);
+});
+
 app.get('/api/recommendations', async (req, res) => {
     try {
         const task = req.query.task || 'text-generation';
@@ -136,6 +219,7 @@ app.get('/api/recommendations', async (req, res) => {
         const sharedVram = parseFloat(req.query.sharedVram) || 0;
         const cpuName = req.query.cpuName || '';
         const gpuName = req.query.gpuName || '';
+        const contextWindow = parseInt(req.query.contextWindow) || 2048;
 
         if (isNaN(manualRam) || isNaN(manualVram)) {
             return res.status(400).json({ error: "Please provide manualRam and manualVram" });
@@ -167,8 +251,12 @@ app.get('/api/recommendations', async (req, res) => {
             const weights8bit = model.params * 1.3;
             const weights16bit = model.params * 2.2;
 
-            // KV Cache / Context Window Buffer (assuming 4096 context)
-            const contextBuffer = 1.5;
+            // KV Cache Estimation (Realistic 16-bit precision for KV)
+            // Rule of thumb: a 7B model uses ~0.5GB for 4096 context. a 70B uses ~4GB.
+            // Formula: (params / 7) * (context / 4096) * 0.5
+            const contextBuffer = (model.params / 7) * (contextWindow / 4096) * 0.5;
+            const totalRequired4bit = weights4bit + contextBuffer;
+            const totalRequired8bit = weights8bit + contextBuffer;
 
             let status = 'Cloud Only';
             let badgeClass = 'status-impossible';
@@ -179,25 +267,30 @@ app.get('/api/recommendations', async (req, res) => {
 
             // 1. INFERENCE LOGIC (5-Tier System)
             const hardwareContext = systemSpecs.gpuName || systemSpecs.cpuName || 'your hardware';
+            const isOverContextLimit = contextWindow > model.maxContext;
 
             // TIER 1: NATIVE PERFORMANCE (FP16/8-bit in VRAM)
-            if (systemSpecs.vramGB >= (weights8bit + contextBuffer)) {
+            if (systemSpecs.vramGB >= (totalRequired8bit)) {
                 status = 'Native Performance';
                 badgeClass = 'status-runnable';
-                reasoning = `Perfect Fit. 100% GPU execution via ${hardwareContext}. Expect maximum speed.`;
+                reasoning = isOverContextLimit
+                    ? `⚠️ Native Limit Breach! Model supports ${model.maxContext}, but ${contextWindow} tokens requested. Hallucinations likely.`
+                    : `Perfect Fit. 100% GPU execution via ${hardwareContext}. Expect maximum speed at ${contextWindow} tokens.`;
                 strategy = systemSpecs.vendor === 'NVIDIA' ? 'vLLM / Hugging Face' : 'Ollama (FP16)';
                 gpuOffload = 100;
             }
             // TIER 2: OPTIMIZED (4-bit in VRAM)
-            else if (systemSpecs.vramGB >= (weights4bit + contextBuffer)) {
+            else if (systemSpecs.vramGB >= (totalRequired4bit)) {
                 status = 'Optimized Local';
                 badgeClass = 'status-runnable';
-                reasoning = `Excellent Fit for ${hardwareContext} using 4-bit quantization. Very fast.`;
+                reasoning = isOverContextLimit
+                    ? `Excellent HW fit, but native limit of ${model.maxContext} tokens exceeded. Stability risks.`
+                    : `Excellent Fit for ${hardwareContext} using 4-bit quantization. Very fast.`;
                 strategy = systemSpecs.vendor === 'NVIDIA' ? 'AutoGPTQ / EXL2' : 'Ollama / MLX (4-bit)';
                 gpuOffload = 100;
             }
             // TIER 3: HYBRID (Split CPU/GPU)
-            else if ((systemSpecs.vramGB + systemSpecs.ramGB) >= (weights4bit + contextBuffer + 4)) {
+            else if ((systemSpecs.vramGB + systemSpecs.ramGB) >= (totalRequired4bit + 4)) {
                 const capableVRAM = Math.max(0, systemSpecs.vramGB - contextBuffer);
                 const percentGPU = Math.min(100, Math.round((capableVRAM / weights4bit) * 100));
 
@@ -205,24 +298,29 @@ app.get('/api/recommendations', async (req, res) => {
                 badgeClass = 'status-quant';
 
                 if (systemSpecs.vramGB === 0 && systemSpecs.sharedVramGB > 0) {
-                    reasoning = `Runs via Integrated Graphics (${hardwareContext}). Borrowing from System RAM. Expect slow speeds.`;
+                    reasoning = `Runs via Integrated Graphics (${hardwareContext}). Borrowing from System RAM.`;
                 } else {
-                    reasoning = `Runs across ${hardwareContext} and System RAM (~${percentGPU}% GPU offload).`;
+                    reasoning = `Runs across ${hardwareContext} and System RAM (~${percentGPU}% GPU).`;
+                }
+
+                if (isOverContextLimit) {
+                    reasoning += ` ⚠️ Note: Requested context exceeds ${model.maxContext} nativ limit.`;
+                } else {
+                    reasoning += ` Context: ${contextWindow} tokens.`;
                 }
 
                 strategy = 'Llama.cpp (GGUF)';
                 if (percentGPU < 20 && systemSpecs.vramGB > 0) {
                     status = 'CPU Bottleneck';
                     badgeClass = 'status-warning';
-                    reasoning = `Mostly CPU execution on ${systemSpecs.cpuName || 'System'}. Slow generation expected.`;
                 }
                 gpuOffload = percentGPU;
             }
             // TIER 4: EXPERIMENTAL (3-bit or Tight Fit)
-            else if ((systemSpecs.ramGB + systemSpecs.vramGB) >= (model.params * 0.5 + 2)) {
+            else if ((systemSpecs.ramGB + systemSpecs.vramGB) >= (model.params * 0.5 + contextBuffer + 1)) {
                 status = 'Experimental';
                 badgeClass = 'status-warning';
-                reasoning = `Very tight fit on ${hardwareContext}. Requires extreme quantization for stability.`;
+                reasoning = `Very tight fit on ${hardwareContext}. Requires extreme quantization for stability at ${contextWindow} context.`;
                 strategy = 'Llama.cpp (IQ3_XS / Q2_K)';
                 gpuOffload = 0;
             }
@@ -230,7 +328,7 @@ app.get('/api/recommendations', async (req, res) => {
             else {
                 status = 'Cloud Only';
                 badgeClass = 'status-impossible';
-                reasoning = `Model exceeds total memory on ${hardwareContext}. Requires ${(weights4bit).toFixed(1)}GB+ RAM.`;
+                reasoning = `Model exceeds total memory. Requires ${totalRequired4bit.toFixed(1)}GB+ RAM for ${contextWindow} context.`;
                 strategy = 'RunPod / Lambda Labs';
                 gpuOffload = 0;
             }
@@ -252,9 +350,13 @@ app.get('/api/recommendations', async (req, res) => {
                 const baseTPS = 80;
                 predictedTPS = Math.round((baseTPS / (model.params / 7)) * (systemSpecs.vendor === 'Apple' ? 0.7 : 1));
             } else if (status === 'Hybrid Offload') {
-                predictedTPS = Math.round(5 + (gpuOffload / 100) * 15);
-            } else if (status === 'CPU Bottleneck') {
-                predictedTPS = Math.round(1.5 + (systemSpecs.ramGB / 64) * 2);
+                // Scale between 5 (CPU) and 25 (Low GPU)
+                predictedTPS = Math.round(5 + (gpuOffload / 100) * 20);
+            } else if (status === 'CPU Bottleneck' || status === 'Experimental') {
+                // Measured heuristic for modern DDR4/DDR5 RAM
+                predictedTPS = parseFloat((1.2 + (systemSpecs.ramGB / 128) * 2).toFixed(1));
+            } else {
+                predictedTPS = 'N/A';
             }
 
             // 4. OPTIMIZED CLI COMMAND
@@ -277,6 +379,8 @@ app.get('/api/recommendations', async (req, res) => {
                 gpuOffload,
                 predictedTPS,
                 optimizedCommand,
+                isOverContextLimit,
+                contextUsage: contextBuffer.toFixed(2),
                 requirements: { fp16: weights16bit.toFixed(1), int8: weights8bit.toFixed(1), int4: weights4bit.toFixed(1) }
             };
         });

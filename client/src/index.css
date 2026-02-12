@@ -629,3 +629,98 @@ h1 {
 .back-link:hover {
     color: white;
 }
+
+/* Range Input (Slider) Styling */
+input[type=range] {
+    -webkit-appearance: none;
+    appearance: none;
+    background: transparent;
+}
+
+input[type=range]:focus {
+    outline: none;
+}
+
+input[type=range]::-webkit-slider-runnable-track {
+    width: 100%;
+    height: 6px;
+    cursor: pointer;
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 10px;
+    border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+input[type=range]::-webkit-slider-thumb {
+    height: 18px;
+    width: 18px;
+    border-radius: 50%;
+    background: var(--primary);
+    cursor: pointer;
+    -webkit-appearance: none;
+    margin-top: -7px;
+    box-shadow: 0 0 15px rgba(99, 102, 241, 0.6);
+    border: 2px solid white;
+}
+
+/* Breach Warning Styling */
+.model-row.breach-warning {
+    background: rgba(239, 68, 68, 0.04);
+    position: relative;
+    overflow: hidden;
+    padding-left: 1.5rem;
+    /* Space for the indicator */
+    border-bottom: 1px solid rgba(239, 68, 68, 0.2);
+    margin: 0.5rem 0;
+    border-radius: 12px;
+}
+
+.model-row.breach-warning::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 20%;
+    bottom: 20%;
+    width: 4px;
+    background: #ef4444;
+    border-radius: 0 4px 4px 0;
+    box-shadow: 2px 0 10px rgba(239, 68, 68, 0.4);
+}
+
+.model-row.breach-warning::after {
+    content: 'LIMIT BREACH';
+    position: absolute;
+    top: 1rem;
+    right: 1.5rem;
+    font-size: 0.65rem;
+    font-weight: 900;
+    color: #ef4444;
+    letter-spacing: 0.15em;
+    opacity: 0.8;
+}
+
+.status-badge {
+    display: flex;
+    align-items: center;
+}
+
+input[type=range]:active::-webkit-slider-thumb {
+    transform: scale(1.2);
+    box-shadow: 0 0 25px rgba(99, 102, 241, 0.8);
+}
+
+input[type=range]::-moz-range-track {
+    width: 100%;
+    height: 6px;
+    cursor: pointer;
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 10px;
+}
+
+input[type=range]::-moz-range-thumb {
+    height: 16px;
+    width: 16px;
+    border-radius: 50%;
+    background: var(--primary);
+    cursor: pointer;
+    border: 2px solid white;
+}

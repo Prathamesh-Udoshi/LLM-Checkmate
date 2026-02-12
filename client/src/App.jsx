@@ -29,108 +29,52 @@ function App() {
     const [parseStatus, setParseStatus] = useState({ text: '', type: '' });
     const [detectedProcessor, setDetectedProcessor] = useState('');
     const [detectedGpu, setDetectedGpu] = useState('');
+    const [contextWindow, setContextWindow] = useState(2048);
 
     useEffect(() => {
         fetchTasks();
     }, []);
 
-    // Smart Parser for Pasted Specs
+    // AI Spec Parser (Backend-Powered)
     useEffect(() => {
         if (!rawSpecs) {
             setParseStatus({ text: '', type: '' });
-            setDetectedProcessor('');
-            setDetectedGpu('');
             return;
         }
 
-        let detectedRam = null;
-        let detectedVram = null;
-        let isIntegrated = false;
-        let procName = '';
-        let gpuName = '';
+        const parseHardware = async () => {
+            setParseStatus({ text: '🧠 AI Parsing in progress...', type: 'searching' });
+            try {
+                const res = await fetch('/api/parse-specs', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ text: rawSpecs })
+                });
+                const data = await res.json();
 
-        // Processor Regex (Windows/Mac)
-        const procRegex = /(?:Processor|Chip)[:\s–]*([^\n\t\r]+)/i;
-        const procMatch = rawSpecs.match(procRegex);
-        if (procMatch) {
-            procName = procMatch[1].trim();
-            setDetectedProcessor(procName);
-        }
+                if (data.ram) setManualRam(data.ram);
+                if (data.vram !== undefined) setManualVram(data.vram);
+                if (data.sharedVram !== undefined) setManualSharedVram(data.sharedVram);
+                if (data.cpu) setDetectedProcessor(data.cpu);
+                if (data.gpu) setDetectedGpu(data.gpu);
 
-        // GPU Name Regex (Captures NVIDIA, AMD, Intel, or Apple GPU brands)
-        const gpuBrandRegex = /(?:NVIDIA|GeForce|Radeon|Intel\(R\)\sUHD|Iris|Intel\(R\)\sIris|Apple\sM\d|GPU\s\d+)[:\s–]*([^\n\t\r]+)/i;
-        const gpuMatch = rawSpecs.match(gpuBrandRegex);
-        if (gpuMatch) {
-            gpuName = gpuMatch[0].trim();
-            // Clean up if it just says "GPU 0" or starts with a brand and captures too much
-            setDetectedGpu(gpuName);
-        }
+                let msgParts = [];
+                if (data.cpu) msgParts.push(`CPU: ${data.cpu}`);
+                if (data.gpu) msgParts.push(`GPU: ${data.gpu}`);
+                if (data.ram) msgParts.push(`${data.ram}GB RAM`);
+                if (data.vram) msgParts.push(`${data.vram}GB VRAM`);
 
-        // RAM Regex
-        const ramRegex = /(?:Installed RAM|Memory|Total Memory|RAM)[:\s–]*(\d+(?:\.\d+)?)\s*(GB|MB)/i;
-        const ramMatch = rawSpecs.match(ramRegex);
-        if (ramMatch) {
-            let val = parseFloat(ramMatch[1]);
-            if (ramMatch[2].toUpperCase() === 'MB') val = val / 1024;
-            detectedRam = Math.round(val);
-            setManualRam(detectedRam);
-        }
-
-        // 1. Explicitly check for SHARED memory first to avoid false positives in Dedicated check
-        const sharedRegex = /Shared GPU Memory[:\s–]*(\d+(?:\.\d+)?)\s*(GB|MB)/i;
-        const sharedMatch = rawSpecs.match(sharedRegex);
-
-        // 2. Check for DEDICATED memory (excluding anything that says "Shared")
-        const dedicatedRegex = /(?:Dedicated Video Memory|Dedicated GPU Memory)[:\s–]*(\d+(?:\.\d+)?)\s*(GB|MB)/i;
-        const dedicatedMatch = rawSpecs.match(dedicatedRegex);
-
-        // 3. Fallback for generic VRAM mentions (only if "Dedicated" or "Shared" weren't matched precisely)
-        const genericVramRegex = /(?<!Shared\s)(?:VRAM|GPU Memory)[:\s–]*(\d+(?:\.\d+)?)\s*(GB|MB)/i;
-        const genericMatch = rawSpecs.match(genericVramRegex);
-
-        if (dedicatedMatch) {
-            let val = parseFloat(dedicatedMatch[1]);
-            if (dedicatedMatch[2].toUpperCase() === 'MB') val = val / 1024;
-            detectedVram = Math.round(val);
-            setManualVram(detectedVram);
-        } else if (genericMatch) {
-            let val = parseFloat(genericMatch[1]);
-            if (genericMatch[2].toUpperCase() === 'MB') val = val / 1024;
-            detectedVram = Math.round(val);
-            setManualVram(detectedVram);
-        }
-
-        if (sharedMatch) {
-            let val = parseFloat(sharedMatch[1]);
-            if (sharedMatch[2].toUpperCase() === 'MB') val = val / 1024;
-            setManualSharedVram(Math.round(val));
-
-            // Note: We don't overwrite manualVram here if dedicated was found, 
-            // but we use it to set the "Integrated" flag if dedicated is missing or 0.
-            if (!detectedVram || detectedVram < 0.5) {
-                isIntegrated = true;
-                setManualVram(0);
+                setParseStatus({
+                    text: `✨ AI Detected: ${msgParts.join(' | ')}`,
+                    type: 'success'
+                });
+            } catch (err) {
+                setParseStatus({ text: '❌ AI Parser failed. Using local regex fallback...', type: 'error' });
             }
-        } else {
-            setManualSharedVram(0);
-        }
+        };
 
-        if (detectedRam || detectedVram || procName || gpuName) {
-            let msgParts = [];
-            if (procName) msgParts.push(`CPU: ${procName}`);
-            if (gpuName) msgParts.push(`GPU: ${gpuName}`);
-            if (detectedRam) msgParts.push(`${detectedRam}GB RAM`);
-
-            if (isIntegrated) {
-                msgParts.push(`Integrated Graphics`);
-            } else if (detectedVram) {
-                msgParts.push(`${detectedVram}GB Dedicated VRAM`);
-            }
-
-            setParseStatus({ text: `✨ Detected: ${msgParts.join(' + ')}`, type: 'success' });
-        } else {
-            setParseStatus({ text: '🔍 No hardware patterns found. Try entering values manually below.', type: 'searching' });
-        }
+        const timeoutId = setTimeout(parseHardware, 800);
+        return () => clearTimeout(timeoutId);
     }, [rawSpecs]);
 
     const getVramHeuristic = (name) => {
@@ -223,7 +167,7 @@ function App() {
             }, 500);
             return () => clearTimeout(delayDebounceFn);
         }
-    }, [selectedTask, searchQuery, view, manualRam, manualVram, manualSharedVram]);
+    }, [selectedTask, searchQuery, view, manualRam, manualVram, manualSharedVram, contextWindow]);
 
     const fetchTasks = async () => {
         try {
@@ -242,7 +186,8 @@ function App() {
                 `&manualRam=${manualRam}&manualVram=${manualVram}` +
                 `&sharedVram=${manualSharedVram}` +
                 `&cpuName=${encodeURIComponent(detectedProcessor)}` +
-                `&gpuName=${encodeURIComponent(detectedGpu)}`;
+                `&gpuName=${encodeURIComponent(detectedGpu)}` +
+                `&contextWindow=${contextWindow}`;
 
             const res = await fetch(url);
             const data = await res.json();
@@ -519,6 +464,26 @@ function App() {
                         ))}
                     </div>
                 </div>
+
+                <div className="filter-group" style={{ minWidth: '300px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.4rem' }}>
+                        <label>Context Window (Simulator)</label>
+                        <span style={{ fontWeight: 'bold', color: '#3b82f6' }}>{contextWindow.toLocaleString()} tokens</span>
+                    </div>
+                    <input
+                        type="range"
+                        min="512"
+                        max="128000"
+                        step="512"
+                        value={contextWindow}
+                        onChange={(e) => setContextWindow(parseInt(e.target.value))}
+                        style={{ width: '100%', cursor: 'pointer' }}
+                    />
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.7rem', color: '#64748b', marginTop: '0.2rem' }}>
+                        <span>Fast (Low RAM)</span>
+                        <span>Long Memory (High RAM)</span>
+                    </div>
+                </div>
             </div>
 
             <div className="dashboard">
@@ -554,16 +519,17 @@ function App() {
                     <div className="model-list">
                         {filteredModels.length > 0 ? (
                             filteredModels.map((model) => (
-                                <div className="model-row" key={model.id}>
+                                <div className={`model-row ${model.isOverContextLimit ? 'breach-warning' : ''}`} key={model.id}>
                                     <div className="model-identity">
                                         <div className="model-name">{model.name}</div>
                                         <div className="model-meta">
-                                            {model.params}B Params • {model.predictedTPS} tokens/sec
+                                            {model.params}B Params • {model.maxContext / 1024}k Max • {model.predictedTPS === 'N/A' ? 'Speed: Cloud Only' : `${model.predictedTPS} tokens/sec`}
                                         </div>
                                     </div>
 
                                     <div className="status-container">
-                                        <div className={`status-badge ${model.badgeClass}`}>
+                                        <div className={`status-badge ${model.isOverContextLimit ? 'status-impossible' : model.badgeClass}`}>
+                                            {model.isOverContextLimit && <AlertTriangle size={14} style={{ marginRight: '6px' }} />}
                                             {model.status}
                                         </div>
                                         <div className="status-reasoning">{model.reasoning}</div>
@@ -572,6 +538,9 @@ function App() {
                                     <div className="strategy-box">
                                         <div className="strategy-label">{model.strategy}</div>
                                         <div className="fine-tuning-label">Fine-Tuning: {model.fineTuning}</div>
+                                        <div className="fine-tuning-label" style={{ color: '#6366f1', marginTop: '4px' }}>
+                                            KV Cache: {model.contextUsage} GB
+                                        </div>
                                         {model.optimizedCommand && (
                                             <div className="command-snippet" onClick={() => {
                                                 navigator.clipboard.writeText(model.optimizedCommand);
